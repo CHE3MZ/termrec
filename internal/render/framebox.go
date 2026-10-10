@@ -18,21 +18,27 @@ import (
 // CSS-exact values from terminalizer-player (see ref docs), in 1x px:
 // radius 6px; window titlebar 22px #E8E8E8; floating titlebar 34px;
 // solid title margin 15px; body padding window 10px / floating+solid 20px;
-// margin 18px; shadow 0 0 18px #B3B3B3; frame/body bg #1D1D1D.
+// margin 18px; shadow 0 0 18px; frame/body bg #1D1D1D.
 // Compose happens at renderSS x via the ss parameter; all pixel constants
 // below are multiplied by ss so output stays proportional.
+//
+// Shadow color note: ref uses #B3B3B3, but that only works composited over
+// its white page. Our GIFs are transparent by default and must sit on any
+// background, so the glow is neutral black at low peak alpha: over white
+// it reads as the same gray ramp as ref, over dark backgrounds it darkens
+// like a real shadow instead of glowing white.
 const (
-	frameRadius      = 6
-	frameMargin      = 18
-	shadowSigma1x    = 7
-	shadowColorR     = 0xB3
-	shadowColorG     = 0xB3
-	shadowColorB     = 0xB3
-	bodyBG_R         = 0x1D
-	bodyBG_G         = 0x1D
-	bodyBG_B         = 0x1D
-	windowPad        = 10
-	floatingPad      = 20
+	frameRadius   = 6
+	frameMargin   = 18
+	shadowSigma1x = 7
+	// Peak glow opacity (0-255). Blurred edge coverage halves it, so the
+	// pixels hugging the card sit near ~0.17 alpha.
+	shadowAlphaPeak = 89
+	bodyBG_R        = 0x1D
+	bodyBG_G        = 0x1D
+	bodyBG_B        = 0x1D
+	windowPad       = 10
+	floatingPad     = 20
 	// Window titlebar total height: CSS height 22px (content-box) plus the
 	// 1px top highlight border and 1px bottom divider = 24px.
 	windowTitleH     = 24
@@ -507,14 +513,14 @@ func shadowLayer(cardW, cardH, radius, sigma int) *image.RGBA {
 			if a == 0 {
 				continue
 			}
-			// Store premultiplied (RGB <= A is mandatory for image.RGBA).
-			k := float64(a) / 255
-			layer.SetRGBA(x, y, color.RGBA{
-				R: uint8(float64(shadowColorR)*k + 0.5),
-				G: uint8(float64(shadowColorG)*k + 0.5),
-				B: uint8(float64(shadowColorB)*k + 0.5),
-				A: a,
-			})
+			// Neutral black glow at low peak alpha (premultiplied: RGB 0).
+			// Reads as a gray ramp over white pages and as a real darkening
+			// shadow over dark backgrounds — never a white halo.
+			outA := uint8(float64(a)*shadowAlphaPeak/255 + 0.5)
+			if outA == 0 {
+				continue
+			}
+			layer.SetRGBA(x, y, color.RGBA{R: 0, G: 0, B: 0, A: outA})
 		}
 	}
 

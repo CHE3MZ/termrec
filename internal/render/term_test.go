@@ -138,29 +138,25 @@ func TestFrameGeometryCSS(t *testing.T) {
 	}
 }
 
-// Opaque white page by default: the reference renderer captures a browser
-// page with a white body background, so default floating frames have fully
-// opaque white margins with a smooth gray shadow ramp — no transparency,
-// no stipple halo (ref GIFs are all a=255).
-func TestWhitePageDefault(t *testing.T) {
+// Transparent by default: default theme bg is "transparent", so a fresh
+// floating render must contain transparent pixels and the GIF must flag them.
+func TestTransparentDefault(t *testing.T) {
 	title := "T"
 	cfg := testConfig("floating", &title) // default theme bg transparent
 	term := NewTerminal(10, 3)
 	snap := term.Snapshot()
 	img := DrawFrame(snap, term.CurX, term.CurY, true, cfg)
+	found := false
 	for i := 3; i < len(img.Pix); i += 4 {
-		if img.Pix[i] != 0xff {
-			t.Fatalf("expected fully opaque frame, pixel %d has alpha %d", i/4, img.Pix[i])
+		if img.Pix[i] < 128 {
+			found = true
+			break
 		}
 	}
-	W, H := img.Bounds().Dx(), img.Bounds().Dy()
-	for _, p := range [][2]int{{0, 0}, {W - 1, 0}, {0, H - 1}, {W - 1, H - 1}} {
-		c := img.RGBAAt(p[0], p[1])
-		if c.R != 0xff || c.G != 0xff || c.B != 0xff {
-			t.Fatalf("corner %v = #%02x%02x%02x, want pure white page", p, c.R, c.G, c.B)
-		}
+	if !found {
+		t.Fatalf("expected transparent pixels in default floating frame (corners/margins)")
 	}
-	// end-to-end: rendered GIF must have no transparent palette entry
+	// end-to-end: render GIF and check transparency survives encoding
 	rec := recording.File{Config: cfg, Records: []recording.Record{
 		{Delay: 200, Content: "hi\r\n"},
 		{Delay: 200, Content: "yo\r\n"},
@@ -179,12 +175,17 @@ func TestWhitePageDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	transparentFrame := false
 	for _, pm := range g.Image {
 		for _, c := range pm.Palette {
 			_, _, _, a := c.RGBA()
 			if a == 0 {
-				t.Fatalf("expected opaque GIF palette (white page parity)")
+				transparentFrame = true
+				break
 			}
 		}
+	}
+	if !transparentFrame {
+		t.Fatalf("expected GIF palette transparency")
 	}
 }

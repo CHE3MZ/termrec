@@ -38,9 +38,6 @@ func anchorPalette(anchors []color.RGBA, transparent bool) color.Palette {
 		pal = append(pal, color.RGBA{})
 	}
 	seen := map[uint32]struct{}{}
-	if transparent {
-		seen[0] = struct{}{}
-	}
 	for _, c := range anchors {
 		if c.A < 128 {
 			continue
@@ -205,6 +202,17 @@ func ditherFS(src *image.RGBA, pal color.Palette, transparent bool) *image.Palet
 				continue
 			}
 			r, g, bl := src.Pix[off], src.Pix[off+1], src.Pix[off+2]
+			if transparent && a < 24 && r*2 <= a && g*2 <= a && bl*2 <= a {
+				// Absorb faint dark coverage (shadow tail, AA dust): it is
+				// invisible on every background by itself — keeping it would
+				// only let error diffusion concentrate it into a visible
+				// stipple fringe far from the card. Hard transparent, and
+				// excluded from error flow both ways (see skip checks in
+				// the diffusion loop). Bright faint pixels (text AA) are
+				// unaffected: their straight color is light (R ~= A).
+				skip[y][x] = true
+				continue
+			}
 			if a > 247 {
 				if idx, ok := exact[uint32(r)<<16|uint32(g)<<8|uint32(bl)]; ok {
 					locked[y][x] = true
@@ -219,6 +227,43 @@ func ditherFS(src *image.RGBA, pal color.Palette, transparent bool) *image.Palet
 		}
 	}
 	qc := newQuantCache(pal, transparent)
+	// darkSemi marks pixels that were semi-transparent with a dark straight
+	// color (shadow glow, card-edge AA): when diffusion resolves one to
+	// opaque, it must become pure black, never a dark-gray tone that would
+	// read as a dotted fringe on dark pages. Light semi pixels (text AA)
+	// keep the normal nearest-color path.
+	darkSemi := make([][]bool, H)
+	for y := 0; y < H; y++ {
+		darkSemi[y] = make([]bool, W)
+		for x := 0; x < W; x++ {
+			if skip[y][x] || locked[y][x] {
+				continue
+			}
+			off := src.PixOffset(b.Min.X+x, b.Min.Y+y)
+			a := uint16(src.Pix[off+3])
+			if !transparent || a >= 250 || a == 0 {
+				continue
+			}
+			r, g, bl := uint16(src.Pix[off]), uint16(src.Pix[off+1]), uint16(src.Pix[off+2])
+			if r*2 <= a && g*2 <= a && bl*2 <= a {
+				darkSemi[y][x] = true
+			}
+		}
+	}
+	// blackIdx is the opaque pure-black palette slot (anchored by render.go
+	// for transparent output). Dark semi pixels forced there vanish on dark
+	// pages and read as shadow density on light pages.
+	blackIdx := -1
+	for i := 0; i < len(pal); i++ {
+		if transparent && i == 0 {
+			continue
+		}
+		pr, pg, pb, pa := pal[i].RGBA()
+		if pr>>8 == 0 && pg>>8 == 0 && pb>>8 == 0 && pa>>8 >= 128 {
+			blackIdx = i
+			break
+		}
+	}
 	for y := 0; y < H; y++ {
 		var x0, x1, dx int
 		if y%2 == 0 {
@@ -247,6 +292,10 @@ func ditherFS(src *image.RGBA, pal color.Palette, transparent bool) *image.Palet
 			} else {
 				idx = qc.nearest(or, og, ob)
 				pr, pg, pb, _ := pal[idx].RGBA()
+				if darkSemi[y][x] && blackIdx >= 0 {
+					idx = blackIdx
+					pr, pg, pb = 0, 0, 0
+				}
 				er = float64(or) - float64(pr>>8)
 				eg = float64(og) - float64(pg>>8)
 				eb = float64(ob) - float64(pb>>8)
