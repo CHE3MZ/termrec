@@ -32,8 +32,10 @@ const (
 	frameMargin   = 18
 	shadowSigma1x = 7
 	// Peak glow opacity (0-255). Blurred edge coverage halves it, so the
-	// pixels hugging the card sit near ~0.17 alpha.
-	shadowAlphaPeak = 89
+	// pixels hugging the card sit near ~0.12 alpha: a faint, fine stipple
+	// instead of a coarse dotted band. Higher values look chunkier in GIF's
+	// 1-bit alpha, not smoother.
+	shadowAlphaPeak = 64
 	bodyBG_R        = 0x1D
 	bodyBG_G        = 0x1D
 	bodyBG_B        = 0x1D

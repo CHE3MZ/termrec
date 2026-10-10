@@ -264,6 +264,28 @@ func ditherFS(src *image.RGBA, pal color.Palette, transparent bool) *image.Palet
 			break
 		}
 	}
+	// Stucki error-diffusion kernel (×/42, mirrored on odd rows). It spreads
+	// error over two rows ahead instead of one, which breaks up the worm
+	// trails Floyd-Steinberg leaves in smooth gradients (like the shadow
+	// falloff) into finer, more uniform grain.
+	// Weights: row0 (1,8)(2,4); row1 (-2,2)(-1,4)(0,8)(1,4)(2,2);
+	// row2 (-2,1)(-1,2)(0,4)(1,2)(2,1), all /42.
+	type nb struct {
+		dx, dy int
+		w      float64
+	}
+	stucki := [12][3]float64{
+		{1, 0, 8}, {2, 0, 4},
+		{-2, 1, 2}, {-1, 1, 4}, {0, 1, 8}, {1, 1, 4}, {2, 1, 2},
+		{-2, 2, 1}, {-1, 2, 2}, {0, 2, 4}, {1, 2, 2}, {2, 2, 1},
+	}
+	nbsFwd := make([]nb, 0, len(stucki))
+	nbsBwd := make([]nb, 0, len(stucki))
+	for _, k := range stucki {
+		w := k[2] / 42
+		nbsFwd = append(nbsFwd, nb{int(k[0]), int(k[1]), w})
+		nbsBwd = append(nbsBwd, nb{-int(k[0]), int(k[1]), w})
+	}
 	for y := 0; y < H; y++ {
 		var x0, x1, dx int
 		if y%2 == 0 {
@@ -302,16 +324,9 @@ func ditherFS(src *image.RGBA, pal color.Palette, transparent bool) *image.Palet
 				ea = float64(oa) - 255
 			}
 			dst.SetColorIndex(b.Min.X+x, b.Min.Y+y, uint8(idx))
-			// distribute (mirrored on odd rows)
-			type nb struct {
-				dx, dy int
-				w      float64
-			}
-			var nbs []nb
-			if dx == 1 {
-				nbs = []nb{{1, 0, 7.0 / 16}, {-1, 1, 3.0 / 16}, {0, 1, 5.0 / 16}, {1, 1, 1.0 / 16}}
-			} else {
-				nbs = []nb{{-1, 0, 7.0 / 16}, {1, 1, 3.0 / 16}, {0, 1, 5.0 / 16}, {-1, 1, 1.0 / 16}}
+			nbs := nbsFwd
+			if dx == -1 {
+				nbs = nbsBwd
 			}
 			for _, nb := range nbs {
 				nx, ny := x+nb.dx, y+nb.dy
