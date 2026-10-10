@@ -34,7 +34,7 @@ func decodeGIF(t *testing.T, path string) *gif.GIF {
 
 // Every fixture must render to a valid GIF with matching frame/delay counts.
 func TestRenderAllFixtures(t *testing.T) {
-	fixtures := []string{"demo", "window", "null", "solid", "solid-notitle"}
+	fixtures := []string{"demo", "window", "null", "solid", "solid-notitle", "typing"}
 	for _, name := range fixtures {
 		t.Run(name, func(t *testing.T) {
 			rec := loadFixture(t, name)

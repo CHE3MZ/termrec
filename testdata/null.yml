@@ -29,7 +29,7 @@ config:
   lineHeight: 1
   letterSpacing: 0
   theme:
-    background: "#232628"
+    background: "transparent"
     foreground: "#afafaf"
     cursor: "#c7c7c7"
     black: "#232628"
