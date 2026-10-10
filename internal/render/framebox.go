@@ -33,7 +33,9 @@ const (
 	bodyBG_B         = 0x1D
 	windowPad        = 10
 	floatingPad      = 20
-	windowTitleH     = 22
+	// Window titlebar total height: CSS height 22px (content-box) plus the
+	// 1px top highlight border and 1px bottom divider = 24px.
+	windowTitleH     = 24
 	floatingTitleH   = 34
 	solidTitleMargin = 15
 )
@@ -306,38 +308,7 @@ func applyFrameBox(termImg *image.RGBA, cfg config.Config, colors map[string]col
 			shadowLayer(cardW, cardH, radius, shadowSigma1x*ss), image.Point{}, draw.Over)
 	}
 	draw.Draw(out, image.Rect(ox, oy2, ox+cardW, oy2+cardH), card, image.Point{}, draw.Over)
-	if shadowEnabled(cfg) {
-		// White-matte the glow ring outside the card (ref body is white):
-		// semi glow pixels become opaque smooth ramp instead of GIF stipple
-		// dust, while fully clear margins stay transparent.
-		matteGlowOutside(out, image.Rect(ox, oy2, ox+cardW, oy2+cardH))
-	}
 	return out
-}
-
-// matteGlowOutside composites semi-transparent pixels outside cardRect over
-// white (matte) and marks them opaque. Fully transparent pixels are kept,
-// so the GIF retains transparency where there is truly nothing to draw.
-func matteGlowOutside(out *image.RGBA, cardRect image.Rectangle) {
-	b := out.Bounds()
-	for y := b.Min.Y; y < b.Max.Y; y++ {
-		for x := b.Min.X; x < b.Max.X; x++ {
-			if image.Pt(x, y).In(cardRect) {
-				continue
-			}
-			c := out.RGBAAt(x, y)
-			if c.A == 0 || c.A == 0xff {
-				continue
-			}
-			k := float64(c.A) / 255
-			out.SetRGBA(x, y, color.RGBA{
-				R: uint8(float64(c.R)*k + 255*(1-k) + 0.5),
-				G: uint8(float64(c.G)*k + 255*(1-k) + 0.5),
-				B: uint8(float64(c.B)*k + 255*(1-k) + 0.5),
-				A: 0xff,
-			})
-		}
-	}
 }
 
 func parseBorder(cfg config.Config) (int, color.RGBA) {
@@ -625,7 +596,7 @@ func drawWindowTitleBar(dst *image.RGBA, r image.Rectangle, title string, ss int
 		{color.RGBA{0xFF, 0xBD, 0x4C, 0xff}, color.RGBA{0xE0, 0x9E, 0x3E, 0xff}},
 		{color.RGBA{0x00, 0xCA, 0x56, 0xff}, color.RGBA{0x14, 0xAE, 0x46, 0xff}},
 	}
-	cy := (r.Min.Y + r.Max.Y) / 2
+	cy := r.Min.Y + int(9.5*float64(ss)+0.5)
 	for i, d := range dots {
 		cx := r.Min.X + 8*ss + 6*ss + i*(12*ss+4*ss)
 		fillCircleBorder(dst, cx, cy, 6*ss, d.fill, d.border)
@@ -633,7 +604,7 @@ func drawWindowTitleBar(dst *image.RGBA, r image.Rectangle, title string, ss int
 	face := titleFacePx(14 * float64(ss))
 	tw := font.MeasureString(face, title).Ceil()
 	tx := r.Min.X + (r.Dx()-tw)/2
-	d := &font.Drawer{Dst: dst, Src: &image.Uniform{color.RGBA{0x3B, 0x42, 0x47, 0xff}}, Face: face, Dot: fixed.P(tx, r.Min.Y+16*ss)}
+	d := &font.Drawer{Dst: dst, Src: &image.Uniform{color.RGBA{0x3B, 0x42, 0x47, 0xff}}, Face: face, Dot: fixed.P(tx, r.Min.Y+17*ss)}
 	d.DrawString(title)
 }
 
@@ -644,10 +615,12 @@ func drawFloatingTitleBar(dst *image.RGBA, r image.Rectangle, title string, ss i
 	dots := []color.RGBA{
 		{0xFF, 0x5C, 0x5C, 0xff}, {0xFF, 0xBD, 0x4C, 0xff}, {0x00, 0xCA, 0x56, 0xff},
 	}
-	cy := r.Min.Y + 9*ss + 7*ss
+	// CSS: 15px dots, buttons left 13px top 9px -> centers (20.5, 16.5).
+	rad := int(7.5*float64(ss) + 0.5)
+	cy := r.Min.Y + int(16.5*float64(ss)+0.5)
 	for i, c := range dots {
-		cx := r.Min.X + 13*ss + 7*ss + i*(15*ss+4*ss)
-		fillCircle(dst, cx, cy, 7*ss, c)
+		cx := r.Min.X + int(20.5*float64(ss)+0.5) + i*(15*ss+4*ss)
+		fillCircle(dst, cx, cy, rad, c)
 	}
 	face := titleFacePx(14 * float64(ss))
 	tw := font.MeasureString(face, title).Ceil()

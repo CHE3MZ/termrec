@@ -110,7 +110,8 @@ func TestFrameSizes(t *testing.T) {
 	}
 }
 
-// CSS-exact geometry: window titlebar 22px + body pad 10; floating 34 + 20.
+// CSS-exact geometry: window titlebar 22px content + 1px top highlight +
+// 1px bottom border (24 total) + body pad 10; floating 34 + 20.
 func TestFrameGeometryCSS(t *testing.T) {
 	title := "T"
 	term := NewTerminal(20, 5)
@@ -121,9 +122,9 @@ func TestFrameGeometryCSS(t *testing.T) {
 
 	wcfg := testConfig("window", &title)
 	wimg := DrawFrame(snap, term.CurX, term.CurY, true, wcfg)
-	// card = term + 2*10 pad, +22 title; outer = card + 2*18 margin + 2*21 glow
+	// card = term + 2*10 pad, +24 title; outer = card + 2*18 margin + 2*21 glow
 	wantW := termW + 20 + 36 + 42
-	wantH := termH + 20 + 22 + 36 + 42
+	wantH := termH + 20 + 24 + 36 + 42
 	if wimg.Bounds().Dx() != wantW || wimg.Bounds().Dy() != wantH {
 		t.Fatalf("window geometry: got %dx%d want %dx%d", wimg.Bounds().Dx(), wimg.Bounds().Dy(), wantW, wantH)
 	}
