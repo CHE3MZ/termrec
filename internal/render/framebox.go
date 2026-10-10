@@ -193,13 +193,13 @@ func applyFrameBox(termImg *image.RGBA, cfg config.Config, colors map[string]col
 		if strings.TrimSpace(bgName) == "" {
 			// Bare terminal: transparency preserved (default transparent).
 			if margin == 0 {
-				return termImg
+				return applyWatermark(termImg, cfg)
 			}
 			W := termImg.Bounds().Dx() + margin*2
 			H := termImg.Bounds().Dy() + margin*2
 			out := image.NewRGBA(image.Rect(0, 0, W, H))
 			draw.Draw(out, image.Rect(margin, margin, margin+termImg.Bounds().Dx(), margin+termImg.Bounds().Dy()), termImg, image.Point{}, draw.Over)
-			return out
+			return applyWatermark(out, cfg)
 		}
 		bg := colors["background"]
 		if c, t, err := theme.Parse(bgName); err == nil && !t {
@@ -213,7 +213,7 @@ func applyFrameBox(termImg *image.RGBA, cfg config.Config, colors map[string]col
 				draw.Draw(out, out.Bounds(), &image.Uniform{bg}, image.Point{}, draw.Src)
 			}
 			draw.Draw(out, out.Bounds(), termImg, image.Point{}, draw.Over)
-			return out
+			return applyWatermark(out, cfg)
 		}
 		W := termImg.Bounds().Dx() + margin*2
 		H := termImg.Bounds().Dy() + margin*2
@@ -222,7 +222,7 @@ func applyFrameBox(termImg *image.RGBA, cfg config.Config, colors map[string]col
 			draw.Draw(out, out.Bounds(), &image.Uniform{bg}, image.Point{}, draw.Src)
 		}
 		draw.Draw(out, image.Rect(margin, margin, margin+termImg.Bounds().Dx(), margin+termImg.Bounds().Dy()), termImg, image.Point{}, draw.Over)
-		return out
+		return applyWatermark(out, cfg)
 	}
 
 	bg := frameBG(cfg, colors)
@@ -418,6 +418,11 @@ func applyRoundedMask(img *image.RGBA, r int) {
 			if k > 1 {
 				k = 1
 			}
+			// Scale straight RGB and alpha together so the stored
+			// premultiplied pixel stays valid (RGB <= A).
+			old.R = uint8(float64(old.R) * k)
+			old.G = uint8(float64(old.G) * k)
+			old.B = uint8(float64(old.B) * k)
 			old.A = uint8(float64(old.A) * k)
 			img.SetRGBA(b.Min.X+x, b.Min.Y+y, old)
 		}
@@ -461,10 +466,12 @@ func strokeRoundedRectInner(img *image.RGBA, w, radius int, c color.RGBA) {
 			if outA == 0 {
 				continue
 			}
+			// Numerator is already premultiplied (straight coverage math),
+			// store it directly: dividing by outA would break RGB <= A.
 			img.SetRGBA(b.Min.X+x, b.Min.Y+y, color.RGBA{
-				R: uint8((fr*sa+float64(old.R)*oa*(1-sa))/outA + 0.5),
-				G: uint8((fg*sa+float64(old.G)*oa*(1-sa))/outA + 0.5),
-				B: uint8((fb*sa+float64(old.B)*oa*(1-sa))/outA + 0.5),
+				R: uint8(fr*sa + float64(old.R)*oa*(1-sa) + 0.5),
+				G: uint8(fg*sa + float64(old.G)*oa*(1-sa) + 0.5),
+				B: uint8(fb*sa + float64(old.B)*oa*(1-sa) + 0.5),
 				A: uint8(outA*255 + 0.5),
 			})
 		}
@@ -528,7 +535,14 @@ func shadowLayer(cardW, cardH, radius, sigma int) *image.RGBA {
 			if a == 0 {
 				continue
 			}
-			layer.SetRGBA(x, y, color.RGBA{R: shadowColorR, G: shadowColorG, B: shadowColorB, A: a})
+			// Store premultiplied (RGB <= A is mandatory for image.RGBA).
+			k := float64(a) / 255
+			layer.SetRGBA(x, y, color.RGBA{
+				R: uint8(float64(shadowColorR)*k + 0.5),
+				G: uint8(float64(shadowColorG)*k + 0.5),
+				B: uint8(float64(shadowColorB)*k + 0.5),
+				A: a,
+			})
 		}
 	}
 
@@ -680,10 +694,11 @@ func fillCircle(dst *image.RGBA, cx, cy, rad int, c color.RGBA) {
 				dst.SetRGBA(px, py, color.RGBA{})
 				continue
 			}
+			// Premultiplied store (no /outA division): numerator already is.
 			dst.SetRGBA(px, py, color.RGBA{
-				R: uint8((fr*sa+float64(old.R)*oa*(1-sa))/outA + 0.5),
-				G: uint8((fg*sa+float64(old.G)*oa*(1-sa))/outA + 0.5),
-				B: uint8((fb*sa+float64(old.B)*oa*(1-sa))/outA + 0.5),
+				R: uint8(fr*sa + float64(old.R)*oa*(1-sa) + 0.5),
+				G: uint8(fg*sa + float64(old.G)*oa*(1-sa) + 0.5),
+				B: uint8(fb*sa + float64(old.B)*oa*(1-sa) + 0.5),
 				A: uint8(outA*255 + 0.5),
 			})
 		}
@@ -720,10 +735,11 @@ func fillCircleBorder(dst *image.RGBA, cx, cy, rad int, fill, border color.RGBA)
 				dst.SetRGBA(px, py, color.RGBA{})
 				continue
 			}
+			// Premultiplied store (no /outA division): numerator already is.
 			dst.SetRGBA(px, py, color.RGBA{
-				R: uint8((float64(c.R)*sa+float64(old.R)*oa*(1-sa))/outA + 0.5),
-				G: uint8((float64(c.G)*sa+float64(old.G)*oa*(1-sa))/outA + 0.5),
-				B: uint8((float64(c.B)*sa+float64(old.B)*oa*(1-sa))/outA + 0.5),
+				R: uint8(float64(c.R)*sa + float64(old.R)*oa*(1-sa) + 0.5),
+				G: uint8(float64(c.G)*sa + float64(old.G)*oa*(1-sa) + 0.5),
+				B: uint8(float64(c.B)*sa + float64(old.B)*oa*(1-sa) + 0.5),
 				A: uint8(outA*255 + 0.5),
 			})
 		}

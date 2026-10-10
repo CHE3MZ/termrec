@@ -52,7 +52,9 @@ func applyWatermark(base *image.RGBA, cfg config.Config) *image.RGBA {
 	tmp := image.NewRGBA(b)
 	draw.Draw(tmp, b, scaled, image.Point{}, draw.Src)
 	if opacity < 1 {
-		for i := 3; i < len(tmp.Pix); i += 4 {
+		// Scale all channels: Pix holds premultiplied values, so alpha
+		// must never exceed any RGB channel (RGB <= A invariant).
+		for i := 0; i < len(tmp.Pix); i++ {
 			tmp.Pix[i] = uint8(float64(tmp.Pix[i]) * opacity)
 		}
 	}

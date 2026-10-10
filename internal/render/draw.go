@@ -165,12 +165,12 @@ func downscaleRGBA(src *image.RGBA, w, h int) *image.RGBA {
 			var n float64
 			for sy := y0; sy < y1; sy++ {
 				for sx := x0; sx < x1; sx++ {
+					// Pix holds premultiplied values: average them directly.
 					off := src.PixOffset(sb.Min.X+sx, sb.Min.Y+sy)
-					sa := float64(src.Pix[off+3]) / 255
-					r += float64(src.Pix[off]) * sa
-					g += float64(src.Pix[off+1]) * sa
-					b += float64(src.Pix[off+2]) * sa
-					a += sa
+					r += float64(src.Pix[off])
+					g += float64(src.Pix[off+1])
+					b += float64(src.Pix[off+2])
+					a += float64(src.Pix[off+3])
 					n++
 				}
 			}
@@ -178,10 +178,10 @@ func downscaleRGBA(src *image.RGBA, w, h int) *image.RGBA {
 				continue
 			}
 			dst.SetRGBA(x, y, color.RGBA{
-				R: uint8((r / a) + 0.5),
-				G: uint8((g / a) + 0.5),
-				B: uint8((b / a) + 0.5),
-				A: uint8((a / n * 255) + 0.5),
+				R: uint8(r/n + 0.5),
+				G: uint8(g/n + 0.5),
+				B: uint8(b/n + 0.5),
+				A: uint8(a/n + 0.5),
 			})
 		}
 	}
