@@ -53,7 +53,7 @@ func drawTerminal(grid [][]Cell, cfg config.Config, colors map[string]color.RGBA
 	if px <= 0 {
 		px = 12
 	}
-	face := monoFace(px)
+	face := monoFaceFor(cfg.FontFamily, px)
 	boldFace := face // synthesized by double-strike below
 	_ = boldFace
 
@@ -231,7 +231,7 @@ func drawCursor(termImg *image.RGBA, grid [][]Cell, curX, curY int, cfg config.C
 			d := &font.Drawer{
 				Dst:  termImg,
 				Src:  &image.Uniform{glyphCol},
-				Face: monoFace(px),
+				Face: monoFaceFor(cfg.FontFamily, px),
 				Dot:  fixed.P(r.Min.X, r.Min.Y+ascent),
 			}
 			d.DrawString(string(underCh))
