@@ -271,9 +271,6 @@ func findSystemFont(family string) (*opentype.Font, error) {
 	return nil, os.ErrNotExist
 }
 
-// titleFace returns a sans face for titlebars (Arial-like; Go Regular).
-func titleFace() font.Face { return titleFacePx(14) }
-
 // titleFacePx returns the sans face at the given pixel size.
 func titleFacePx(px float64) font.Face {
 	if px <= 0 {

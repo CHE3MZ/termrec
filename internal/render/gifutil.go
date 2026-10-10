@@ -133,13 +133,6 @@ func newQuantCache(pal color.Palette, transparent bool) *quantCache {
 	return &quantCache{pal: pal, start: start, memo: map[uint32]int{}}
 }
 
-func absI(n int) int {
-	if n < 0 {
-		return -n
-	}
-	return n
-}
-
 func (q *quantCache) nearest(r, g, b int) int {
 	key := uint32(r>>3)<<10 | uint32(g>>3)<<5 | uint32(b>>3)
 	if idx, ok := q.memo[key]; ok {
@@ -294,62 +287,4 @@ func clampF(f float64) int {
 		return 255
 	}
 	return int(f + 0.5)
-}
-
-// rgbaToPaletted keeps the old single-frame entry point (used by tests):
-// anchors empty, global built from this frame only.
-func rgbaToPaletted(img *image.RGBA, n int) *image.Paletted {
-	if n <= 0 || n > 256 {
-		n = 256
-	}
-	transparent := hasTransparency(img)
-	budget := n
-	if transparent {
-		budget = n - 1
-		if budget < 2 {
-			budget = 2
-		}
-	}
-	pal := buildGlobalPalette([]*image.RGBA{img}, nil, budget, transparent)
-	return ditherFS(img, pal, transparent)
-}
-
-// paletteForOpaque builds a palette of up to n opaque colors by sampling.
-// Kept for compatibility; prefers frequency order.
-func paletteForOpaque(img *image.RGBA, n int) color.Palette {
-	if n <= 0 {
-		n = 1
-	}
-	if n > 256 {
-		n = 256
-	}
-	return buildGlobalPalette([]*image.RGBA{img}, nil, n, false)
-}
-
-// paletteFor keeps the old name for callers/tests: opaque sampling.
-func paletteFor(img image.Image, n int) color.Palette {
-	if rgba, ok := img.(*image.RGBA); ok {
-		return paletteForOpaque(rgba, n)
-	}
-	b := img.Bounds()
-	tmp := image.NewRGBA(b)
-	for y := b.Min.Y; y < b.Max.Y; y++ {
-		for x := b.Min.X; x < b.Max.X; x++ {
-			tmp.Set(x, y, img.At(x, y))
-		}
-	}
-	return paletteForOpaque(tmp, n)
-}
-
-// ditherCopy maps src into dst with FS diffusion using dst's palette.
-func ditherCopy(dst *image.Paletted, src image.Image) {
-	b := dst.Bounds()
-	tmp := image.NewRGBA(b)
-	for y := b.Min.Y; y < b.Max.Y; y++ {
-		for x := b.Min.X; x < b.Max.X; x++ {
-			tmp.Set(x, y, src.At(x, y))
-		}
-	}
-	mapped := ditherFS(tmp, dst.Palette, false)
-	copy(dst.Pix, mapped.Pix)
 }
