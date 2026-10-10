@@ -89,8 +89,9 @@ func Render(rec recording.File, outPath string, qualityOverride int, step int) (
 		}
 		stepsCounter = (stepsCounter + 1) % step
 		snap := term.Snapshot()
+		// DrawFrame composes at 2x + downscales (smooth) and applies the
+		// watermark frame-relative (CSS: prepended to .terminalizer-frame).
 		img := DrawFrame(snap, term.CurX, term.CurY, term.CursorVisible, cfg)
-		img = applyWatermark(img, cfg)
 		// NOTE: no flatten() — transparency is the default (see gifutil.go).
 		// delay = next frame's delay (ref/render.js:237), % len for last frame
 		nextDelay := rec.Records[(i+1)%len(rec.Records)].Delay

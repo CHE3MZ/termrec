@@ -105,13 +105,87 @@ func drawTerminal(grid [][]Cell, cfg config.Config, colors map[string]color.RGBA
 }
 
 // DrawFrame renders grid + cursor + frameBox into final RGBA (alpha preserved).
+// The frame composes at renderSS x scale and is downscaled with area
+// averaging, so text, dots, corners and gradients come out smooth.
 func DrawFrame(grid [][]Cell, curX, curY int, cursorVisible bool, cfg config.Config) *image.RGBA {
 	colors, trans := theme.Map(cfg.Theme)
-	termImg := drawTerminal(grid, cfg, colors, trans["background"])
+	scfg := scaledConfig(cfg, renderSS)
+	termImg := drawTerminal(grid, scfg, colors, trans["background"])
 	if cursorVisible {
-		termImg = drawCursor(termImg, grid, curX, curY, cfg, colors, trans["background"])
+		termImg = drawCursor(termImg, grid, curX, curY, scfg, colors, trans["background"])
 	}
-	return applyFrameBox(termImg, cfg, colors, trans["background"])
+	big := applyFrameBox(termImg, scfg, colors, trans["background"], renderSS)
+	// Target 1x dims from the unscaled layout.
+	cw1, ch1 := cellSize(cfg)
+	rows := len(grid)
+	cols := 0
+	if rows > 0 {
+		cols = len(grid[0])
+	}
+	target := frameOuterSize(cfg, cols*cw1, rows*ch1)
+	if target.Dx() <= 0 || target.Dy() <= 0 {
+		return big
+	}
+	if big.Bounds().Dx() == target.Dx() && big.Bounds().Dy() == target.Dy() {
+		return big
+	}
+	return downscaleRGBA(big, target.Dx(), target.Dy())
+}
+
+// downscaleRGBA area-averages src to w x h with premultiplied alpha,
+// preserving transparency and smoothing supersampled edges.
+func downscaleRGBA(src *image.RGBA, w, h int) *image.RGBA {
+	sb := src.Bounds()
+	sw, sh := sb.Dx(), sb.Dy()
+	if w <= 0 || h <= 0 || sw <= 0 || sh <= 0 {
+		return src
+	}
+	dst := image.NewRGBA(image.Rect(0, 0, w, h))
+	rx := float64(sw) / float64(w)
+	ry := float64(sh) / float64(h)
+	for y := 0; y < h; y++ {
+		y0 := int(float64(y) * ry)
+		y1 := int(float64(y+1) * ry)
+		if y1 <= y0 {
+			y1 = y0 + 1
+		}
+		if y1 > sh {
+			y1 = sh
+		}
+		for x := 0; x < w; x++ {
+			x0 := int(float64(x) * rx)
+			x1 := int(float64(x+1) * rx)
+			if x1 <= x0 {
+				x1 = x0 + 1
+			}
+			if x1 > sw {
+				x1 = sw
+			}
+			var r, g, b, a float64
+			var n float64
+			for sy := y0; sy < y1; sy++ {
+				for sx := x0; sx < x1; sx++ {
+					off := src.PixOffset(sb.Min.X+sx, sb.Min.Y+sy)
+					sa := float64(src.Pix[off+3]) / 255
+					r += float64(src.Pix[off]) * sa
+					g += float64(src.Pix[off+1]) * sa
+					b += float64(src.Pix[off+2]) * sa
+					a += sa
+					n++
+				}
+			}
+			if n == 0 || a == 0 {
+				continue
+			}
+			dst.SetRGBA(x, y, color.RGBA{
+				R: uint8((r / a) + 0.5),
+				G: uint8((g / a) + 0.5),
+				B: uint8((b / a) + 0.5),
+				A: uint8((a / n * 255) + 0.5),
+			})
+		}
+	}
+	return dst
 }
 
 func drawCursor(termImg *image.RGBA, grid [][]Cell, curX, curY int, cfg config.Config, colors map[string]color.RGBA, termTrans bool) *image.RGBA {

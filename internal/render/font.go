@@ -48,7 +48,7 @@ func monoFace(px float64) font.Face {
 		if face, err := opentype.NewFace(ft, &opentype.FaceOptions{
 			Size:    px,
 			DPI:     72,
-			Hinting: font.HintingFull,
+			Hinting: font.HintingNone,
 		}); err == nil {
 			fontCacheMu.Lock()
 			faceCache[key] = face
@@ -60,26 +60,48 @@ func monoFace(px float64) font.Face {
 }
 
 // titleFace returns a sans face for titlebars (Arial-like; Go Regular).
-func titleFace() font.Face {
+func titleFace() font.Face { return titleFacePx(14) }
+
+// titleFacePx returns the sans face at the given pixel size.
+func titleFacePx(px float64) font.Face {
+	if px <= 0 {
+		px = 14
+	}
+	key := "title-" + itoa(int(px*10))
 	fontCacheMu.Lock()
-	if f, ok := faceCache["title-14"]; ok {
+	if f, ok := faceCache[key]; ok {
 		fontCacheMu.Unlock()
 		return f
 	}
 	fontCacheMu.Unlock()
 	if ft, err := loadFont("goregular", goregular.TTF); err == nil {
 		if face, err := opentype.NewFace(ft, &opentype.FaceOptions{
-			Size:    14,
+			Size:    px,
 			DPI:     72,
-			Hinting: font.HintingFull,
+			Hinting: font.HintingNone,
 		}); err == nil {
 			fontCacheMu.Lock()
-			faceCache["title-14"] = face
+			faceCache[key] = face
 			fontCacheMu.Unlock()
 			return face
 		}
 	}
 	return basicfont.Face7x13
+}
+
+// renderSS is the supersampling factor: frames compose at 2x and are
+// downscaled with area averaging for smooth text, shapes and gradients.
+const renderSS = 2
+
+// scaledConfig multiplies pixel-based metrics for supersampled compose.
+// lineHeight stays a multiplier; only absolute px values scale.
+func scaledConfig(cfg config.Config, ss int) config.Config {
+	if ss <= 1 {
+		return cfg
+	}
+	cfg.FontSize *= ss
+	cfg.LetterSpacing *= ss
+	return cfg
 }
 
 func itoa(n int) string {
