@@ -121,17 +121,17 @@ func TestFrameGeometryCSS(t *testing.T) {
 
 	wcfg := testConfig("window", &title)
 	wimg := DrawFrame(snap, term.CurX, term.CurY, true, wcfg)
-	// card = term + 2*10 pad, +22 title; outer = card + 2*18 margin + 18 shadow glow
-	wantW := termW + 20 + 36 + 18
-	wantH := termH + 20 + 22 + 36 + 18
+	// card = term + 2*10 pad, +22 title; outer = card + 2*18 margin + 2*21 glow
+	wantW := termW + 20 + 36 + 42
+	wantH := termH + 20 + 22 + 36 + 42
 	if wimg.Bounds().Dx() != wantW || wimg.Bounds().Dy() != wantH {
 		t.Fatalf("window geometry: got %dx%d want %dx%d", wimg.Bounds().Dx(), wimg.Bounds().Dy(), wantW, wantH)
 	}
 
 	fcfg := testConfig("floating", &title)
 	fimg := DrawFrame(snap, term.CurX, term.CurY, true, fcfg)
-	wantW = termW + 40 + 36 + 18
-	wantH = termH + 40 + 34 + 36 + 18
+	wantW = termW + 40 + 36 + 42
+	wantH = termH + 40 + 34 + 36 + 42
 	if fimg.Bounds().Dx() != wantW || fimg.Bounds().Dy() != wantH {
 		t.Fatalf("floating geometry: got %dx%d want %dx%d", fimg.Bounds().Dx(), fimg.Bounds().Dy(), wantW, wantH)
 	}

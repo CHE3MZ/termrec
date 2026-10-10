@@ -167,11 +167,13 @@ func (q *quantCache) nearest(r, g, b int) int {
 }
 
 // ditherFS maps src into a paletted image with serpentine Floyd-Steinberg
-// diffusion. Transparent pixels stay index 0 and neither emit nor absorb
-// error across the transparency edge (keeps edges crisp, no halos).
-// Flat-lock: pixels exactly matching a palette entry bypass diffusion
-// entirely (no error in or out), so large flat fills stay bit-exact instead
-// of speckling with neighbor tones.
+// diffusion. GIF has 1-bit alpha, so semi-transparent pixels (drop shadows,
+// antialiased outer edges) are decided by diffused alpha: the coverage is
+// preserved as a stipple instead of collapsing to a hard transparent/opaque
+// edge. Fully transparent pixels stay index 0.
+// Flat-lock: fully opaque pixels exactly matching a palette entry bypass
+// diffusion entirely (no error in or out), so large flat fills stay
+// bit-exact instead of speckling with neighbor tones.
 func ditherFS(src *image.RGBA, pal color.Palette, transparent bool) *image.Paletted {
 	b := src.Bounds()
 	W, H := b.Dx(), b.Dy()
@@ -188,33 +190,39 @@ func ditherFS(src *image.RGBA, pal color.Palette, transparent bool) *image.Palet
 		}
 		exact[uint32(pr>>8)<<16|uint32(pg>>8)<<8|uint32(pb>>8)] = uint8(i)
 	}
-	// float error buffers (premultiplied space not needed; diffusion on RGB)
+	// float error buffers (diffusion on RGB + alpha coverage)
 	bufR := make([][]float64, H)
 	bufG := make([][]float64, H)
 	bufB := make([][]float64, H)
+	bufA := make([][]float64, H)
 	skip := make([][]bool, H)
 	locked := make([][]bool, H)
 	for y := 0; y < H; y++ {
 		bufR[y] = make([]float64, W)
 		bufG[y] = make([]float64, W)
 		bufB[y] = make([]float64, W)
+		bufA[y] = make([]float64, W)
 		skip[y] = make([]bool, W)
 		locked[y] = make([]bool, W)
 		for x := 0; x < W; x++ {
 			off := src.PixOffset(b.Min.X+x, b.Min.Y+y)
-			if transparent && src.Pix[off+3] < 128 {
+			a := src.Pix[off+3]
+			if transparent && a < 8 {
 				skip[y][x] = true
 				continue
 			}
 			r, g, bl := src.Pix[off], src.Pix[off+1], src.Pix[off+2]
-			if idx, ok := exact[uint32(r)<<16|uint32(g)<<8|uint32(bl)]; ok {
-				locked[y][x] = true
-				dst.SetColorIndex(b.Min.X+x, b.Min.Y+y, idx)
-				continue
+			if a > 247 {
+				if idx, ok := exact[uint32(r)<<16|uint32(g)<<8|uint32(bl)]; ok {
+					locked[y][x] = true
+					dst.SetColorIndex(b.Min.X+x, b.Min.Y+y, idx)
+					continue
+				}
 			}
 			bufR[y][x] = float64(r)
 			bufG[y][x] = float64(g)
 			bufB[y][x] = float64(bl)
+			bufA[y][x] = float64(a)
 		}
 	}
 	qc := newQuantCache(pal, transparent)
@@ -236,12 +244,22 @@ func ditherFS(src *image.RGBA, pal color.Palette, transparent bool) *image.Palet
 			or := clampF(bufR[y][x])
 			og := clampF(bufG[y][x])
 			ob := clampF(bufB[y][x])
-			idx := qc.nearest(or, og, ob)
+			oa := clampF(bufA[y][x])
+			var idx int
+			var er, eg, eb, ea float64
+			if transparent && oa < 128 {
+				// coverage says transparent: emit nothing, diffuse alpha error
+				idx = 0
+				ea = float64(oa)
+			} else {
+				idx = qc.nearest(or, og, ob)
+				pr, pg, pb, _ := pal[idx].RGBA()
+				er = float64(or) - float64(pr>>8)
+				eg = float64(og) - float64(pg>>8)
+				eb = float64(ob) - float64(pb>>8)
+				ea = float64(oa) - 255
+			}
 			dst.SetColorIndex(b.Min.X+x, b.Min.Y+y, uint8(idx))
-			pr, pg, pb, _ := pal[idx].RGBA()
-			er := float64(or) - float64(pr>>8)
-			eg := float64(og) - float64(pg>>8)
-			eb := float64(ob) - float64(pb>>8)
 			// distribute (mirrored on odd rows)
 			type nb struct {
 				dx, dy int
@@ -261,6 +279,7 @@ func ditherFS(src *image.RGBA, pal color.Palette, transparent bool) *image.Palet
 				bufR[ny][nx] += er * nb.w
 				bufG[ny][nx] += eg * nb.w
 				bufB[ny][nx] += eb * nb.w
+				bufA[ny][nx] += ea * nb.w
 			}
 		}
 	}

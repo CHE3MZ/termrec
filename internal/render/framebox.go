@@ -7,6 +7,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/CHE3MZ/termrec/internal/config"
 	"github.com/CHE3MZ/termrec/internal/theme"
@@ -23,7 +24,7 @@ import (
 const (
 	frameRadius      = 6
 	frameMargin      = 18
-	shadowBlur       = 18
+	shadowSigma1x    = 7
 	shadowColorR     = 0xB3
 	shadowColorG     = 0xB3
 	shadowColorB     = 0xB3
@@ -36,6 +37,9 @@ const (
 	floatingTitleH   = 34
 	solidTitleMargin = 15
 )
+
+// shadowGlow returns the 1x glow extent beyond the card (3 sigma covers it).
+func shadowGlow() int { return 3 * shadowSigma1x }
 
 func frameType(cfg config.Config) string {
 	if cfg.FrameBox.Type == nil {
@@ -163,8 +167,8 @@ func frameOuterSize(cfg config.Config, innerW, innerH int) image.Rectangle {
 	W := cardW + margin*2
 	H := cardH + margin*2
 	if shadowEnabled(cfg) {
-		W += shadowBlur
-		H += shadowBlur
+		W += shadowGlow() * 2
+		H += shadowGlow() * 2
 	}
 	return image.Rect(0, 0, W, H)
 }
@@ -256,17 +260,15 @@ func applyFrameBox(termImg *image.RGBA, cfg config.Config, colors map[string]col
 	oy := pad + titleH
 	draw.Draw(card, image.Rect(pad, oy, pad+innerW, oy+innerH), termImg, image.Point{}, draw.Over)
 
-	// window 1px border (#B3B3B3 or style.border override)
+	// window 1px border (#B3B3B3 or style.border override), following the
+	// rounded edge (CSS border follows border-radius)
 	borderW, borderCol := parseBorder(cfg)
 	borderW *= ss
 	if borderW <= 0 && ft == "window" && strings.TrimSpace(styleGet(cfg, "border")) == "" {
 		borderW = ss
 	}
-	if ft == "window" && borderW > 0 {
-		strokeRoundedRect(card, borderW, borderCol)
-	}
 
-	// rounded corners -> transparent
+	// rounded corners -> transparent (2px AA ramp at compose scale)
 	radius := frameRadius * ss
 	if v := styleGet(cfg, "borderRadius"); strings.TrimSpace(v) != "" {
 		low := strings.ToLower(strings.TrimSpace(v))
@@ -277,22 +279,30 @@ func applyFrameBox(termImg *image.RGBA, cfg config.Config, colors map[string]col
 	if radius > 0 {
 		applyRoundedMask(card, radius)
 	}
+	if ft == "window" && borderW > 0 {
+		strokeRoundedRectInner(card, borderW, radius, borderCol)
+	}
 
 	// watermark is positioned relative to the frame (CSS: .terminalizer-frame prepend)
 	card = applyWatermark(card, cfg)
 
-	// 2. Composite onto transparent canvas with margin + soft shadow.
+	// 2. Composite onto transparent canvas with margin + soft gaussian glow.
+	// Glow spread covers 3 sigma so the falloff is never clipped.
+	glow := 3 * shadowSigma1x * ss
 	W := cardW + margin*2
 	H := cardH + margin*2
 	if shadowEnabled(cfg) {
-		W += shadowBlur * ss
-		H += shadowBlur * ss
+		W += glow * 2
+		H += glow * 2
 	}
 	out := image.NewRGBA(image.Rect(0, 0, W, H))
 	ox := margin
 	oy2 := margin
 	if shadowEnabled(cfg) {
-		drawSoftShadow(out, image.Rect(ox, oy2, ox+cardW, oy2+cardH), radius)
+		ox += glow
+		oy2 += glow
+		draw.Draw(out, image.Rect(ox-glow, oy2-glow, ox+cardW+glow, oy2+cardH+glow),
+			shadowLayer(cardW, cardH, radius, shadowSigma1x*ss), image.Point{}, draw.Over)
 	}
 	draw.Draw(out, image.Rect(ox, oy2, ox+cardW, oy2+cardH), card, image.Point{}, draw.Over)
 	return out
@@ -356,171 +366,199 @@ func parseBorder(cfg config.Config) (int, color.RGBA) {
 // --- rounded corners + shadow ---
 
 func applyRoundedMask(img *image.RGBA, r int) {
+	if r <= 0 {
+		return
+	}
 	b := img.Bounds()
-	W, H := b.Dx(), b.Dy()
-	for y := 0; y < r; y++ {
-		for x := 0; x < r; x++ {
-			d := math.Sqrt(float64(x*x + y*y))
-			a := uint8(0)
-			if d < float64(r-1) {
-				continue // fully opaque
-			} else if d < float64(r) {
-				a = uint8((float64(r) - d) * 255)
+	W, H := float64(b.Dx()), float64(b.Dy())
+	// 2px AA ramp at compose scale for a smooth edge after downscaling
+	for y := 0; y < b.Dy(); y++ {
+		for x := 0; x < b.Dx(); x++ {
+			d := sdRoundBox(float64(x), float64(y), W, H, float64(r))
+			if d <= -2 {
+				continue
 			}
-			blend := func(px, py int) {
-				if !image.Pt(px, py).In(b) {
-					return
-				}
-				old := img.RGBAAt(px, py)
-				k := float64(a) / 255
-				old.A = uint8(float64(old.A) * k)
-				img.SetRGBA(px, py, old)
+			if d >= 0 {
+				img.SetRGBA(b.Min.X+x, b.Min.Y+y, color.RGBA{})
+				continue
 			}
-			blend(x, y)
-			blend(W-1-x, y)
-			blend(x, H-1-y)
-			blend(W-1-x, H-1-y)
+			old := img.RGBAAt(b.Min.X+x, b.Min.Y+y)
+			k := -d / 2
+			if k > 1 {
+				k = 1
+			}
+			old.A = uint8(float64(old.A) * k)
+			img.SetRGBA(b.Min.X+x, b.Min.Y+y, old)
 		}
 	}
 }
 
-func strokeRoundedRect(img *image.RGBA, w int, c color.RGBA) {
+// sdRoundBox is the signed distance (px) to a W x H rounded-rect boundary
+// with corner radius r; negative inside, centered on the image.
+func sdRoundBox(x, y, W, H, r float64) float64 {
+	qx := math.Abs(x-(W-1)/2) - ((W-1)/2 - r)
+	qy := math.Abs(y-(H-1)/2) - ((H-1)/2 - r)
+	ax := math.Max(qx, 0)
+	ay := math.Max(qy, 0)
+	return math.Sqrt(ax*ax+ay*ay) + math.Min(math.Max(qx, qy), 0) - r
+}
+
+func strokeRoundedRectInner(img *image.RGBA, w, radius int, c color.RGBA) {
 	if w <= 0 {
 		return
 	}
 	b := img.Bounds()
-	W, H := b.Dx(), b.Dy()
-	for i := 0; i < w; i++ {
-		for x := i; x < W-i; x++ {
-			img.SetRGBA(x, i, c)
-			img.SetRGBA(x, H-1-i, c)
-		}
-		for y := i; y < H-i; y++ {
-			img.SetRGBA(i, y, c)
-			img.SetRGBA(W-1-i, y, c)
+	W, H := float64(b.Dx()), float64(b.Dy())
+	fw := float64(w)
+	fr, fg, fb, fa := float64(c.R), float64(c.G), float64(c.B), float64(c.A)/255
+	for y := 0; y < b.Dy(); y++ {
+		for x := 0; x < b.Dx(); x++ {
+			d := sdRoundBox(float64(x), float64(y), W, H, float64(radius))
+			if d < -fw-1 || d > 0 {
+				continue
+			}
+			cover := 1.0
+			if d > -1 {
+				cover = -d
+			} else if d < -fw {
+				cover = d + fw + 1
+			}
+			old := img.RGBAAt(b.Min.X+x, b.Min.Y+y)
+			sa := fa * cover
+			oa := float64(old.A) / 255
+			outA := sa + oa*(1-sa)
+			if outA == 0 {
+				continue
+			}
+			img.SetRGBA(b.Min.X+x, b.Min.Y+y, color.RGBA{
+				R: uint8((fr*sa+float64(old.R)*oa*(1-sa))/outA + 0.5),
+				G: uint8((fg*sa+float64(old.G)*oa*(1-sa))/outA + 0.5),
+				B: uint8((fb*sa+float64(old.B)*oa*(1-sa))/outA + 0.5),
+				A: uint8(outA*255 + 0.5),
+			})
 		}
 	}
 }
 
-// drawSoftShadow paints a blurred #B3B3B3 glow of rect r onto dst (transparent bg).
-func drawSoftShadow(dst *image.RGBA, r image.Rectangle, radius int) {
-	sw, sh := r.Dx(), r.Dy()
-	sil := image.NewAlpha(image.Rect(0, 0, sw, sh))
-	for y := 0; y < sh; y++ {
-		for x := 0; x < sw; x++ {
-			a := uint8(0xff)
-			if radius > 0 {
-				inCorner := func(cx, cy int) bool {
-					dx := x - cx
-					dy := y - cy
-					return dx*dx+dy*dy < radius*radius
-				}
-				corner := false
-				switch {
-				case x < radius && y < radius:
-					corner = !inCorner(radius, radius)
-				case x >= sw-radius && y < radius:
-					corner = !inCorner(sw-1-radius, radius)
-				case x < radius && y >= sh-radius:
-					corner = !inCorner(radius, sh-1-radius)
-				case x >= sw-radius && y >= sh-radius:
-					corner = !inCorner(sw-1-radius, sh-1-radius)
-				}
-				if corner {
-					continue
+type shadowKey struct {
+	w, h, radius, sigma int
+}
+
+var (
+	shadowCacheMu sync.Mutex
+	shadowCache   = map[shadowKey]*image.RGBA{}
+)
+
+// shadowLayer returns a cached transparent glow canvas (card + 3 sigma each
+// side) for the card silhouette: true gaussian blur, energy conserving, so
+// the glow spreads wide and falls off smoothly like CSS `0 0 18px`.
+func shadowLayer(cardW, cardH, radius, sigma int) *image.RGBA {
+	if sigma < 1 {
+		sigma = 1
+	}
+	key := shadowKey{cardW, cardH, radius, sigma}
+	shadowCacheMu.Lock()
+	if l, ok := shadowCache[key]; ok {
+		shadowCacheMu.Unlock()
+		return l
+	}
+	shadowCacheMu.Unlock()
+
+	glow := 3 * sigma
+	W, H := cardW+glow*2, cardH+glow*2
+	sil := image.NewAlpha(image.Rect(0, 0, W, H))
+	fr := float64(radius)
+	for y := 0; y < H; y++ {
+		for x := 0; x < W; x++ {
+			lx, ly := float64(x-glow), float64(y-glow)
+			var a uint8
+			if lx < 0 || ly < 0 || lx >= float64(cardW) || ly >= float64(cardH) {
+				a = 0
+			} else if fr <= 0 {
+				a = 0xff
+			} else {
+				d := sdRoundBox(lx, ly, float64(cardW), float64(cardH), fr)
+				if d <= -1 {
+					a = 0xff
+				} else if d < 0 {
+					a = uint8(-d * 255)
 				}
 			}
-			sil.SetAlpha(x, y, color.Alpha{A: a})
+			if a != 0 {
+				sil.SetAlpha(x, y, color.Alpha{A: a})
+			}
 		}
 	}
-	blurR := 6 * renderSS
-	if blurR < 3 {
-		blurR = 3
-	}
-	blurred := boxBlurAlpha(sil, blurR)
-	blurred = boxBlurAlpha(blurred, blurR)
-	for y := 0; y < sh; y++ {
-		for x := 0; x < sw; x++ {
+	blurred := gaussianBlurAlpha(sil, sigma)
+	layer := image.NewRGBA(image.Rect(0, 0, W, H))
+	for y := 0; y < H; y++ {
+		for x := 0; x < W; x++ {
 			a := blurred.AlphaAt(x, y).A
 			if a == 0 {
 				continue
 			}
-			// CSS 18px soft shadow: scale to ~35% peak
-			na := uint16(a) * 90 / 255
-			if na == 0 {
-				continue
-			}
-			dx, dy := r.Min.X+x, r.Min.Y+y
-			if !image.Pt(dx, dy).In(dst.Bounds()) {
-				continue
-			}
-			do, dg, db, da := dst.RGBAAt(dx, dy).RGBA()
-			_ = do
-			sa := float64(na) / 255
-			dr := float64(uint8(do>>8))*(1-sa) + float64(shadowColorR)*sa
-			dg2 := float64(uint8(dg>>8))*(1-sa) + float64(shadowColorG)*sa
-			db2 := float64(uint8(db>>8))*(1-sa) + float64(shadowColorB)*sa
-			da2 := float64(uint8(da>>8)) + sa*(255-float64(uint8(da>>8)))
-			dst.SetRGBA(dx, dy, color.RGBA{R: uint8(dr), G: uint8(dg2), B: uint8(db2), A: uint8(da2)})
+			layer.SetRGBA(x, y, color.RGBA{R: shadowColorR, G: shadowColorG, B: shadowColorB, A: a})
 		}
 	}
+
+	shadowCacheMu.Lock()
+	shadowCache[key] = layer
+	shadowCacheMu.Unlock()
+	return layer
 }
 
-func boxBlurAlpha(src *image.Alpha, r int) *image.Alpha {
+// gaussianBlurAlpha applies a true separable gaussian (sigma) to an alpha
+// mask, kernel truncated at 3 sigma.
+func gaussianBlurAlpha(src *image.Alpha, sigma int) *image.Alpha {
 	b := src.Bounds()
 	W, H := b.Dx(), b.Dy()
+	if sigma <= 0 || W == 0 || H == 0 {
+		return src
+	}
+	rad := 3 * sigma
+	k := make([]float64, 2*rad+1)
+	sum := 0.0
+	s2 := 2 * float64(sigma*sigma)
+	for i := range k {
+		d := float64(i - rad)
+		k[i] = math.Exp(-d * d / s2)
+		sum += k[i]
+	}
+	for i := range k {
+		k[i] /= sum
+	}
 	tmp := image.NewAlpha(b)
 	out := image.NewAlpha(b)
-	// horizontal
 	for y := 0; y < H; y++ {
-		acc := 0
-		for x := -r; x <= r; x++ {
-			xx := x
-			if xx < 0 {
-				xx = 0
-			}
-			if xx >= W {
-				xx = W - 1
-			}
-			acc += int(src.AlphaAt(xx, y).A)
-		}
 		for x := 0; x < W; x++ {
-			tmp.SetAlpha(x, y, color.Alpha{A: uint8(acc / (2*r + 1))})
-			xo := x - r
-			if xo < 0 {
-				xo = 0
+			acc := 0.0
+			for i, kv := range k {
+				xx := x + i - rad
+				if xx < 0 {
+					xx = 0
+				}
+				if xx >= W {
+					xx = W - 1
+				}
+				acc += float64(src.AlphaAt(xx, y).A) * kv
 			}
-			xn := x + r + 1
-			if xn >= W {
-				xn = W - 1
-			}
-			acc += int(src.AlphaAt(xn, y).A) - int(src.AlphaAt(xo, y).A)
+			tmp.SetAlpha(x, y, color.Alpha{A: uint8(acc + 0.5)})
 		}
 	}
-	// vertical
 	for x := 0; x < W; x++ {
-		acc := 0
-		for y := -r; y <= r; y++ {
-			yy := y
-			if yy < 0 {
-				yy = 0
-			}
-			if yy >= H {
-				yy = H - 1
-			}
-			acc += int(tmp.AlphaAt(x, yy).A)
-		}
 		for y := 0; y < H; y++ {
-			out.SetAlpha(x, y, color.Alpha{A: uint8(acc / (2*r + 1))})
-			yo := y - r
-			if yo < 0 {
-				yo = 0
+			acc := 0.0
+			for i, kv := range k {
+				yy := y + i - rad
+				if yy < 0 {
+					yy = 0
+				}
+				if yy >= H {
+					yy = H - 1
+				}
+				acc += float64(tmp.AlphaAt(x, yy).A) * kv
 			}
-			yn := y + r + 1
-			if yn >= H {
-				yn = H - 1
-			}
-			acc += int(tmp.AlphaAt(x, yn).A) - int(tmp.AlphaAt(x, yo).A)
+			out.SetAlpha(x, y, color.Alpha{A: uint8(acc + 0.5)})
 		}
 	}
 	return out
