@@ -117,8 +117,7 @@ func TestRenderRepeatMapping(t *testing.T) {
 }
 
 // Rendered flat colors must match the theme (color consistency between
-// config values and GIF pixels). Tolerance allows for palette rounding;
-// the anchored-palette fix should keep this exact.
+// config values and GIF pixels). Anchored palette keeps flats bit-exact.
 func TestRenderColorConsistency(t *testing.T) {
 	title := "T"
 	cfg := testConfig("null", &title)
@@ -130,8 +129,45 @@ func TestRenderColorConsistency(t *testing.T) {
 	img := DrawFrame(snap, term.CurX, term.CurY, false, cfg)
 	// center of a text cell area (empty cell => pure background)
 	c := img.RGBAAt(img.Bounds().Dx()/2, img.Bounds().Dy()/2)
-	if diff(c.R, 0xff) > 24 || diff(c.G, 0x00) > 24 || diff(c.B, 0x00) > 24 {
+	if diff(c.R, 0xff) > 6 || diff(c.G, 0x00) > 6 || diff(c.B, 0x00) > 6 {
 		t.Fatalf("bg drift: got #%02x%02x%02x want #ff0000", c.R, c.G, c.B)
+	}
+}
+
+// End-to-end: flat theme colors must survive GIF encoding bit-exact,
+// and identical source colors must map to identical palette indices
+// across frames (no per-frame drift).
+func TestGIFColorConsistency(t *testing.T) {
+	title := "T"
+	cfg := testConfig("null", &title)
+	cfg.Theme["background"] = "#232628"
+	cfg.Theme["foreground"] = "#afafaf"
+	cfg.FrameBox.Style = map[string]string{"margin": "0px"} // bare terminal
+	rec := recording.File{Config: cfg, Records: []recording.Record{
+		{Delay: 200, Content: "ab\r\n"},
+		{Delay: 200, Content: "cd\r\n"},
+	}}
+	path := filepath.Join(t.TempDir(), "cc.gif")
+	out, err := Render(rec, path, 100, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := decodeGIF(t, out)
+	if len(g.Image) != 2 {
+		t.Fatalf("frames=%d want 2", len(g.Image))
+	}
+	// sample an empty cell (col 6, row 0): pure flat background, no glyphs
+	cw, ch := cellSize(cfg)
+	sx, sy := 6*cw+cw/2, ch/2
+	bgIdx := g.Image[0].ColorIndexAt(sx, sy)
+	for i, pm := range g.Image {
+		if got := pm.ColorIndexAt(sx, sy); got != bgIdx {
+			t.Fatalf("frame %d bg index %d != frame 0 index %d (drift)", i, got, bgIdx)
+		}
+		r, gg, b, _ := pm.Palette[bgIdx].RGBA()
+		if diff(uint8(r>>8), 0x23) > 4 || diff(uint8(gg>>8), 0x26) > 4 || diff(uint8(b>>8), 0x28) > 4 {
+			t.Fatalf("frame %d bg #%02x%02x%02x want #232628", i, uint8(r>>8), uint8(gg>>8), uint8(b>>8))
+		}
 	}
 }
 

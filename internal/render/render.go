@@ -3,11 +3,13 @@ package render
 import (
 	"fmt"
 	"image"
+	"image/color"
 	"image/gif"
 	"os"
 
 	"github.com/CHE3MZ/termrec/internal/config"
 	"github.com/CHE3MZ/termrec/internal/recording"
+	"github.com/CHE3MZ/termrec/internal/theme"
 	"github.com/CHE3MZ/termrec/internal/timing"
 )
 
@@ -27,6 +29,43 @@ func qualityToColors(q int) int {
 	default:
 		return 32
 	}
+}
+
+// anchorColors lists every exact flat color the composer paints, so the
+// global GIF palette keeps them bit-exact: theme, cursor, frame chrome
+// (titlebars, dots + borders, body bg, title text).
+func anchorColors(cfg config.Config) []color.RGBA {
+	colors, _ := theme.Map(cfg.Theme)
+	out := make([]color.RGBA, 0, len(colors)+16)
+	for _, k := range theme.Names {
+		out = append(out, colors[k])
+	}
+	out = append(out,
+		color.RGBA{0x1D, 0x1D, 0x1D, 0xff}, // frame/body bg
+		color.RGBA{0xE8, 0xE8, 0xE8, 0xff}, // window titlebar
+		color.RGBA{0xF3, 0xF1, 0xF3, 0xff}, // window top highlight
+		color.RGBA{0xB1, 0xAE, 0xB1, 0xff}, // window titlebar bottom border
+		color.RGBA{0xB3, 0xB3, 0xB3, 0xff}, // window border + shadow tint
+		color.RGBA{0x3B, 0x42, 0x47, 0xff}, // window title text
+		color.RGBA{0xFF, 0x5C, 0x5C, 0xff}, // close dot
+		color.RGBA{0xE3, 0x3E, 0x41, 0xff}, // close border
+		color.RGBA{0xFF, 0xBD, 0x4C, 0xff}, // minimize dot
+		color.RGBA{0xE0, 0x9E, 0x3E, 0xff}, // minimize border
+		color.RGBA{0x00, 0xCA, 0x56, 0xff}, // maximize dot
+		color.RGBA{0x14, 0xAE, 0x46, 0xff}, // maximize border
+		color.RGBA{0xFF, 0xFF, 0xFF, 0xff}, // floating/solid title text
+	)
+	if v := styleGet(cfg, "backgroundColor"); v != "" {
+		if c, t, err := theme.Parse(v); err == nil && !t {
+			out = append(out, c)
+		}
+	}
+	if v := styleGet(cfg, "background"); v != "" {
+		if c, t, err := theme.Parse(v); err == nil && !t {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 func repeatToLoopCount(r int) int {
@@ -102,6 +141,15 @@ func Render(rec recording.File, outPath string, qualityOverride int, step int) (
 	}
 
 	out := &gif.GIF{LoopCount: repeatToLoopCount(cfg.Repeat)}
+	// One global palette for every frame: exact theme/chrome anchors first
+	// (flat fills stay bit-exact = color consistency), then frequent colors.
+	// Sharing the palette across frames also stops per-frame index drift.
+	imgs := make([]*image.RGBA, len(frames))
+	for i, fr := range frames {
+		imgs[i] = fr.img
+	}
+	transparent := anyTransparency(imgs)
+	pal := buildGlobalPalette(imgs, anchorColors(cfg), numColors, transparent)
 	for _, fr := range frames {
 		d10 := int(fr.delay / 10)
 		if d10 < 2 {
@@ -110,7 +158,7 @@ func Render(rec recording.File, outPath string, qualityOverride int, step int) (
 		if d10 > 65535 {
 			d10 = 65535
 		}
-		pm := rgbaToPaletted(fr.img, numColors)
+		pm := ditherFS(fr.img, pal, transparent)
 		out.Image = append(out.Image, pm)
 		out.Delay = append(out.Delay, d10)
 		// Full snapshots: leave previous in place (matches terminal frames).
