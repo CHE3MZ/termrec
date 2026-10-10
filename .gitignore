@@ -1,0 +1,13 @@
+ref/
+temp/
+tmp/
+logs/
+log/
+dist/
+build/
+
+*.exe
+
+.DS_Store
+.vscode
+.idea
