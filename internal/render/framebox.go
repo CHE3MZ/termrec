@@ -305,7 +305,38 @@ func applyFrameBox(termImg *image.RGBA, cfg config.Config, colors map[string]col
 			shadowLayer(cardW, cardH, radius, shadowSigma1x*ss), image.Point{}, draw.Over)
 	}
 	draw.Draw(out, image.Rect(ox, oy2, ox+cardW, oy2+cardH), card, image.Point{}, draw.Over)
+	if shadowEnabled(cfg) {
+		// White-matte the glow ring outside the card (ref body is white):
+		// semi glow pixels become opaque smooth ramp instead of GIF stipple
+		// dust, while fully clear margins stay transparent.
+		matteGlowOutside(out, image.Rect(ox, oy2, ox+cardW, oy2+cardH))
+	}
 	return out
+}
+
+// matteGlowOutside composites semi-transparent pixels outside cardRect over
+// white (matte) and marks them opaque. Fully transparent pixels are kept,
+// so the GIF retains transparency where there is truly nothing to draw.
+func matteGlowOutside(out *image.RGBA, cardRect image.Rectangle) {
+	b := out.Bounds()
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			if image.Pt(x, y).In(cardRect) {
+				continue
+			}
+			c := out.RGBAAt(x, y)
+			if c.A == 0 || c.A == 0xff {
+				continue
+			}
+			k := float64(c.A) / 255
+			out.SetRGBA(x, y, color.RGBA{
+				R: uint8(float64(c.R)*k + 255*(1-k) + 0.5),
+				G: uint8(float64(c.G)*k + 255*(1-k) + 0.5),
+				B: uint8(float64(c.B)*k + 255*(1-k) + 0.5),
+				A: 0xff,
+			})
+		}
+	}
 }
 
 func parseBorder(cfg config.Config) (int, color.RGBA) {
