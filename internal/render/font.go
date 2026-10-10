@@ -302,15 +302,14 @@ func titleFacePx(px float64) font.Face {
 // downscaled with area averaging for smooth text, shapes and gradients.
 const renderSS = 2
 
-// scaledConfig multiplies pixel-based metrics for supersampled compose.
-// lineHeight stays a multiplier; only absolute px values scale.
-func scaledConfig(cfg config.Config, ss int) config.Config {
-	if ss <= 1 {
-		return cfg
-	}
-	cfg.FontSize *= ss
-	cfg.LetterSpacing *= ss
-	return cfg
+// scaledMetrics returns exactly ss x the 1x cell metrics. Compose layout
+// must be an exact multiple of the final layout: re-measuring the face at
+// 2x size rounds differently (e.g. 15px vs 2x7px cells), and a non-integer
+// downscale ratio smears every flat fill into neighboring tones.
+// Only the glyph SHAPES use the 2x face (vector outlines scale linearly).
+func scaledMetrics(cfg config.Config, ss int) (cellW, cellH, ascent int) {
+	cw, ch, asc := cellMetrics(cfg)
+	return cw * ss, ch * ss, asc * ss
 }
 
 func itoa(n int) string {

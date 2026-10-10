@@ -34,13 +34,17 @@ func resolveCellColors(cell Cell, colors map[string]color.RGBA, defBG color.RGBA
 // drawTerminal renders a grid snapshot to RGBA without frame.
 // Transparent theme background stays transparent (no flattening here);
 // GIF encoding preserves it (see gif.go).
-func drawTerminal(grid [][]Cell, cfg config.Config, colors map[string]color.RGBA, transparentBG bool) *image.RGBA {
+func drawTerminal(grid [][]Cell, cfg config.Config, colors map[string]color.RGBA, transparentBG bool, ss int) *image.RGBA {
 	rows := len(grid)
 	cols := 0
 	if rows > 0 {
 		cols = len(grid[0])
 	}
-	cw, ch, ascent := cellMetrics(cfg)
+	if ss <= 0 {
+		ss = 1
+	}
+	// Exact-multiple grid (see scaledMetrics): never re-measure at 2x.
+	cw, ch, ascent := scaledMetrics(cfg, ss)
 	W, H := cols*cw, rows*ch
 	img := image.NewRGBA(image.Rect(0, 0, W, H))
 	// Start fully transparent; fill only if theme bg is opaque.
@@ -49,13 +53,11 @@ func drawTerminal(grid [][]Cell, cfg config.Config, colors map[string]color.RGBA
 		draw.Draw(img, img.Bounds(), &image.Uniform{defBG}, image.Point{}, draw.Src)
 	}
 
-	px := float64(cfg.FontSize)
+	px := float64(cfg.FontSize * ss)
 	if px <= 0 {
 		px = 12
 	}
 	face := monoFaceFor(cfg.FontFamily, px)
-	boldFace := face // synthesized by double-strike below
-	_ = boldFace
 
 	for y, row := range grid {
 		for x, cell := range row {
@@ -69,6 +71,10 @@ func drawTerminal(grid [][]Cell, cfg config.Config, colors map[string]color.RGBA
 				}
 			}
 			if cell.Dim {
+				// Scale premultiplied channels together (RGB <= A invariant).
+				fg.R = uint8(uint16(fg.R) * 2 / 3)
+				fg.G = uint8(uint16(fg.G) * 2 / 3)
+				fg.B = uint8(uint16(fg.B) * 2 / 3)
 				fg.A = uint8(uint16(fg.A) * 2 / 3)
 			}
 			x0, y0 := x*cw, y*ch
@@ -84,20 +90,20 @@ func drawTerminal(grid [][]Cell, cfg config.Config, colors map[string]color.RGBA
 				}
 				d.DrawString(string(cell.Ch))
 				if cell.Bold {
-					// double-strike 1px for bold (Go Mono has no bold variant bundled)
-					d.Dot = fixed.P(x0+1, y0+ascent)
+					// double-strike for bold (no bundled bold variant)
+					d.Dot = fixed.P(x0+ss, y0+ascent)
 					d.DrawString(string(cell.Ch))
 				}
 				if cell.Underline {
-					uy := y0 + ch - 3
+					uy := y0 + ch - 3*ss
 					if uy < y0 {
 						uy = y0
 					}
-					draw.Draw(img, image.Rect(x0, uy, x0+cw, uy+1), &image.Uniform{fg}, image.Point{}, draw.Over)
+					draw.Draw(img, image.Rect(x0, uy, x0+cw, uy+ss), &image.Uniform{fg}, image.Point{}, draw.Over)
 				}
 			} else if cell.Underline {
-				uy := y0 + ch - 3
-				draw.Draw(img, image.Rect(x0, uy, x0+cw, uy+1), &image.Uniform{fg}, image.Point{}, draw.Over)
+				uy := y0 + ch - 3*ss
+				draw.Draw(img, image.Rect(x0, uy, x0+cw, uy+ss), &image.Uniform{fg}, image.Point{}, draw.Over)
 			}
 		}
 	}
@@ -107,14 +113,15 @@ func drawTerminal(grid [][]Cell, cfg config.Config, colors map[string]color.RGBA
 // DrawFrame renders grid + cursor + frameBox into final RGBA (alpha preserved).
 // The frame composes at renderSS x scale and is downscaled with area
 // averaging, so text, dots, corners and gradients come out smooth.
+// Compose geometry is exactly renderSS x the 1x layout (see scaledMetrics),
+// so the downscale ratio is integral and flat fills survive bit-exact.
 func DrawFrame(grid [][]Cell, curX, curY int, cursorVisible bool, cfg config.Config) *image.RGBA {
 	colors, trans := theme.Map(cfg.Theme)
-	scfg := scaledConfig(cfg, renderSS)
-	termImg := drawTerminal(grid, scfg, colors, trans["background"])
+	termImg := drawTerminal(grid, cfg, colors, trans["background"], renderSS)
 	if cursorVisible {
-		termImg = drawCursor(termImg, grid, curX, curY, scfg, colors, trans["background"])
+		termImg = drawCursor(termImg, grid, curX, curY, cfg, colors, trans["background"], renderSS)
 	}
-	big := applyFrameBox(termImg, scfg, colors, trans["background"], renderSS)
+	big := applyFrameBox(termImg, cfg, colors, trans["background"], renderSS)
 	// Target 1x dims from the unscaled layout.
 	cw1, ch1 := cellSize(cfg)
 	rows := len(grid)
@@ -188,8 +195,11 @@ func downscaleRGBA(src *image.RGBA, w, h int) *image.RGBA {
 	return dst
 }
 
-func drawCursor(termImg *image.RGBA, grid [][]Cell, curX, curY int, cfg config.Config, colors map[string]color.RGBA, termTrans bool) *image.RGBA {
-	cw, ch, ascent := cellMetrics(cfg)
+func drawCursor(termImg *image.RGBA, grid [][]Cell, curX, curY int, cfg config.Config, colors map[string]color.RGBA, termTrans bool, ss int) *image.RGBA {
+	if ss <= 0 {
+		ss = 1
+	}
+	cw, ch, ascent := scaledMetrics(cfg, ss)
 	if curY < 0 || curY >= len(grid) || curX < 0 {
 		return termImg
 	}
@@ -215,16 +225,16 @@ func drawCursor(termImg *image.RGBA, grid [][]Cell, curX, curY int, cfg config.C
 	var r image.Rectangle
 	switch cfg.CursorStyle {
 	case "underline":
-		r = image.Rect(curX*cw, (curY+1)*ch-2, (curX+1)*cw, (curY+1)*ch)
+		r = image.Rect(curX*cw, (curY+1)*ch-2*ss, (curX+1)*cw, (curY+1)*ch)
 		draw.Draw(termImg, r, &image.Uniform{cur}, image.Point{}, draw.Over)
 	case "bar":
-		r = image.Rect(curX*cw, curY*ch, curX*cw+2, (curY+1)*ch)
+		r = image.Rect(curX*cw, curY*ch, curX*cw+2*ss, (curY+1)*ch)
 		draw.Draw(termImg, r, &image.Uniform{cur}, image.Point{}, draw.Over)
 	default: // block: solid cursor color, glyph punched in cell-bg color (xterm-like)
 		r = image.Rect(curX*cw, curY*ch, (curX+1)*cw, (curY+1)*ch)
 		draw.Draw(termImg, r, &image.Uniform{cur}, image.Point{}, draw.Src)
 		if underCh != ' ' {
-			px := float64(cfg.FontSize)
+			px := float64(cfg.FontSize * ss)
 			if px <= 0 {
 				px = 12
 			}

@@ -174,9 +174,10 @@ func frameOuterSize(cfg config.Config, innerW, innerH int) image.Rectangle {
 }
 
 // applyFrameBox wraps term image with null/window/floating/solid frames.
-// cfg must already be supersampled-scaled (see scaledConfig); ss scales the
-// frame pixel constants to match. The outer margin area stays transparent
-// (default) so GIFs are transparent by default; corners are rounded.
+// cfg is the 1x config; ss scales the frame pixel constants to match the
+// supersampled terminal image, keeping compose geometry an exact multiple
+// of the final layout (see scaledMetrics). The outer margin area stays
+// transparent (default) so GIFs are transparent by default; corners round.
 func applyFrameBox(termImg *image.RGBA, cfg config.Config, colors map[string]color.RGBA, termTrans bool, ss int) *image.RGBA {
 	if ss <= 0 {
 		ss = 1
@@ -193,13 +194,13 @@ func applyFrameBox(termImg *image.RGBA, cfg config.Config, colors map[string]col
 		if strings.TrimSpace(bgName) == "" {
 			// Bare terminal: transparency preserved (default transparent).
 			if margin == 0 {
-				return applyWatermark(termImg, cfg)
+				return applyWatermark(termImg, cfg, ss)
 			}
 			W := termImg.Bounds().Dx() + margin*2
 			H := termImg.Bounds().Dy() + margin*2
 			out := image.NewRGBA(image.Rect(0, 0, W, H))
 			draw.Draw(out, image.Rect(margin, margin, margin+termImg.Bounds().Dx(), margin+termImg.Bounds().Dy()), termImg, image.Point{}, draw.Over)
-			return applyWatermark(out, cfg)
+			return applyWatermark(out, cfg, ss)
 		}
 		bg := colors["background"]
 		if c, t, err := theme.Parse(bgName); err == nil && !t {
@@ -213,7 +214,7 @@ func applyFrameBox(termImg *image.RGBA, cfg config.Config, colors map[string]col
 				draw.Draw(out, out.Bounds(), &image.Uniform{bg}, image.Point{}, draw.Src)
 			}
 			draw.Draw(out, out.Bounds(), termImg, image.Point{}, draw.Over)
-			return applyWatermark(out, cfg)
+			return applyWatermark(out, cfg, ss)
 		}
 		W := termImg.Bounds().Dx() + margin*2
 		H := termImg.Bounds().Dy() + margin*2
@@ -222,7 +223,7 @@ func applyFrameBox(termImg *image.RGBA, cfg config.Config, colors map[string]col
 			draw.Draw(out, out.Bounds(), &image.Uniform{bg}, image.Point{}, draw.Src)
 		}
 		draw.Draw(out, image.Rect(margin, margin, margin+termImg.Bounds().Dx(), margin+termImg.Bounds().Dy()), termImg, image.Point{}, draw.Over)
-		return applyWatermark(out, cfg)
+		return applyWatermark(out, cfg, ss)
 	}
 
 	bg := frameBG(cfg, colors)
@@ -284,7 +285,7 @@ func applyFrameBox(termImg *image.RGBA, cfg config.Config, colors map[string]col
 	}
 
 	// watermark is positioned relative to the frame (CSS: .terminalizer-frame prepend)
-	card = applyWatermark(card, cfg)
+	card = applyWatermark(card, cfg, ss)
 
 	// 2. Composite onto transparent canvas with margin + soft gaussian glow.
 	// Glow spread covers 3 sigma so the falloff is never clipped.

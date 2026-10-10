@@ -14,7 +14,11 @@ import (
 // applyWatermark overlays a local PNG onto base (frame-relative, CSS absolute).
 // Remote URLs are ignored (privacy). Supports right/bottom (default 15px),
 // top/left overrides, width/height scaling, opacity.
-func applyWatermark(base *image.RGBA, cfg config.Config) *image.RGBA {
+// Style px values are final-output px; ss scales them to the compose scale.
+func applyWatermark(base *image.RGBA, cfg config.Config, ss int) *image.RGBA {
+	if ss <= 0 {
+		ss = 1
+	}
 	if cfg.Watermark.ImagePath == nil || strings.TrimSpace(*cfg.Watermark.ImagePath) == "" {
 		return base
 	}
@@ -38,11 +42,11 @@ func applyWatermark(base *image.RGBA, cfg config.Config) *image.RGBA {
 		return base
 	}
 	st := cfg.Watermark.Style
-	targetW := parsePx(styleGetLower(st, "width"), 0)
-	targetH := parsePx(styleGetLower(st, "height"), 0)
+	targetW := parsePx(styleGetLower(st, "width"), 0) * ss
+	targetH := parsePx(styleGetLower(st, "height"), 0) * ss
 	sw, sh := src.Bounds().Dx(), src.Bounds().Dy()
 	if targetW <= 0 && targetH <= 0 {
-		targetW = 100 // CSS default in ref/config.yml
+		targetW = 100 * ss // CSS default in ref/config.yml
 	}
 	scaled := scaleBox(src, targetW, targetH)
 	_ = sw
@@ -61,15 +65,15 @@ func applyWatermark(base *image.RGBA, cfg config.Config) *image.RGBA {
 	// position: default right:15 bottom:15; top/left override when set
 	var x, y int
 	if v := styleGetLower(st, "left"); strings.TrimSpace(v) != "" {
-		x = parsePx(v, 15)
+		x = parsePx(v, 15) * ss
 	} else {
-		right := parsePx(styleGetLower(st, "right"), 15)
+		right := parsePx(styleGetLower(st, "right"), 15) * ss
 		x = base.Bounds().Dx() - tmp.Bounds().Dx() - right
 	}
 	if v := styleGetLower(st, "top"); strings.TrimSpace(v) != "" {
-		y = parsePx(v, 15)
+		y = parsePx(v, 15) * ss
 	} else {
-		bottom := parsePx(styleGetLower(st, "bottom"), 15)
+		bottom := parsePx(styleGetLower(st, "bottom"), 15) * ss
 		y = base.Bounds().Dy() - tmp.Bounds().Dy() - bottom
 	}
 	if x < 0 {
