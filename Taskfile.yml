@@ -37,6 +37,11 @@ tasks:
     cmds:
       - sh scripts/render-sample.sh
 
+  render-check:
+    desc: Render all fixtures + variants with verification
+    cmds:
+      - sh scripts/render-check.sh
+
   default:
     desc: build
     cmds:
