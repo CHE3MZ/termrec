@@ -169,29 +169,52 @@ func (q *quantCache) nearest(r, g, b int) int {
 // ditherFS maps src into a paletted image with serpentine Floyd-Steinberg
 // diffusion. Transparent pixels stay index 0 and neither emit nor absorb
 // error across the transparency edge (keeps edges crisp, no halos).
+// Flat-lock: pixels exactly matching a palette entry bypass diffusion
+// entirely (no error in or out), so large flat fills stay bit-exact instead
+// of speckling with neighbor tones.
 func ditherFS(src *image.RGBA, pal color.Palette, transparent bool) *image.Paletted {
 	b := src.Bounds()
 	W, H := b.Dx(), b.Dy()
 	dst := image.NewPaletted(b, pal)
+	// exact palette lookup for the flat-lock (opaque entries only)
+	exact := map[uint32]uint8{}
+	for i := 0; i < len(pal); i++ {
+		if transparent && i == 0 {
+			continue
+		}
+		pr, pg, pb, pa := pal[i].RGBA()
+		if pa>>8 < 128 {
+			continue
+		}
+		exact[uint32(pr>>8)<<16|uint32(pg>>8)<<8|uint32(pb>>8)] = uint8(i)
+	}
 	// float error buffers (premultiplied space not needed; diffusion on RGB)
 	bufR := make([][]float64, H)
 	bufG := make([][]float64, H)
 	bufB := make([][]float64, H)
 	skip := make([][]bool, H)
+	locked := make([][]bool, H)
 	for y := 0; y < H; y++ {
 		bufR[y] = make([]float64, W)
 		bufG[y] = make([]float64, W)
 		bufB[y] = make([]float64, W)
 		skip[y] = make([]bool, W)
+		locked[y] = make([]bool, W)
 		for x := 0; x < W; x++ {
 			off := src.PixOffset(b.Min.X+x, b.Min.Y+y)
 			if transparent && src.Pix[off+3] < 128 {
 				skip[y][x] = true
 				continue
 			}
-			bufR[y][x] = float64(src.Pix[off])
-			bufG[y][x] = float64(src.Pix[off+1])
-			bufB[y][x] = float64(src.Pix[off+2])
+			r, g, bl := src.Pix[off], src.Pix[off+1], src.Pix[off+2]
+			if idx, ok := exact[uint32(r)<<16|uint32(g)<<8|uint32(bl)]; ok {
+				locked[y][x] = true
+				dst.SetColorIndex(b.Min.X+x, b.Min.Y+y, idx)
+				continue
+			}
+			bufR[y][x] = float64(r)
+			bufG[y][x] = float64(g)
+			bufB[y][x] = float64(bl)
 		}
 	}
 	qc := newQuantCache(pal, transparent)
@@ -206,6 +229,9 @@ func ditherFS(src *image.RGBA, pal color.Palette, transparent bool) *image.Palet
 			if skip[y][x] {
 				dst.SetColorIndex(b.Min.X+x, b.Min.Y+y, 0)
 				continue
+			}
+			if locked[y][x] {
+				continue // already set; absorbs/emits no error
 			}
 			or := clampF(bufR[y][x])
 			og := clampF(bufG[y][x])
@@ -229,7 +255,7 @@ func ditherFS(src *image.RGBA, pal color.Palette, transparent bool) *image.Palet
 			}
 			for _, nb := range nbs {
 				nx, ny := x+nb.dx, y+nb.dy
-				if nx < 0 || nx >= W || ny < 0 || ny >= H || skip[ny][nx] {
+				if nx < 0 || nx >= W || ny < 0 || ny >= H || skip[ny][nx] || locked[ny][nx] {
 					continue
 				}
 				bufR[ny][nx] += er * nb.w
