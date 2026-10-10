@@ -1,7 +1,43 @@
 version: '3'
 
 tasks:
-  default:
-    desc: default task.
+  build:
+    desc: Build termrec binary into dist/
     cmds:
-      - echo "beep boop"
+      - sh scripts/ops/build.sh
+
+  vet:
+    desc: go vet only (quick)
+    cmds:
+      - go vet ./...
+
+  lint:
+    desc: Full lint (bugcheck + seccheck), run constantly
+    cmds:
+      - sh scripts/ops/go-bugcheck.sh
+      - sh scripts/ops/go-seccheck.sh
+
+  lint-quick:
+    desc: vet only
+    cmds:
+      - go vet ./...
+
+  test:
+    desc: go test ./...
+    cmds:
+      - go test ./...
+
+  test-short:
+    desc: Quick tests
+    cmds:
+      - go test -short ./...
+
+  render-sample:
+    desc: Smoke render testdata/demo.yml -> dist/demo.gif
+    cmds:
+      - sh scripts/ops/render-sample.sh
+
+  default:
+    desc: build
+    cmds:
+      - task: build

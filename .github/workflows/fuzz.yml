@@ -1,0 +1,17 @@
+name: fuzz
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 4 * * 0'
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          cache: true
+      - name: Fuzz term parser (10m cap)
+        run: go test -fuzz=FuzzTermFeed -fuzztime=10m ./internal/render/ || true

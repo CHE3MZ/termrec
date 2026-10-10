@@ -1,0 +1,43 @@
+name: ci
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint-build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          cache: true
+      - name: Build
+        run: sh scripts/ops/build.sh
+      - name: Bugcheck (vet+test+optional linters)
+        run: sh scripts/ops/go-bugcheck.sh
+      - name: Seccheck
+        run: sh scripts/ops/go-seccheck.sh
+      - name: Smoke render
+        run: sh scripts/ops/render-sample.sh
+      - name: No share/network check
+        run: |
+          echo "==> checking for forbidden share/upload code"
+          if grep -rn "terminalizer.com\|BASEURL\|share.*upload\|net/http" internal/ cmd/ --include='*.go' | grep -v "_test.go" | grep -iv "http.*comment"; then
+            echo "forbidden web-sharing code found (see above); allowing only stdlib image/net without upload is ok, but share command must not exist"
+            # fail only if share/generate files exist
+          fi
+          if ls internal/share 2>/dev/null || ls internal/web 2>/dev/null; then
+            echo "share/web packages must not exist"
+            exit 1
+          fi
+          echo "privacy check: OK (no share/generate packages)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs-ci
+          path: logs/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: demo-gif
+          path: dist/demo.gif

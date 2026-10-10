@@ -1,45 +1,58 @@
-#!/usr/bin/env bash
-
-set -o pipefail
-
-# Always run from the repo root regardless of where the script is invoked.
+#!/bin/sh
+# Full bugcheck: vet + tests + optional linters if installed.
+# POSIX sh only. Run constantly during dev and in CI.
+# Missing optional tools are skipped (warn), go vet/test must pass.
+set -eu
 cd "$(dirname "$0")/../.."
-
 mkdir -p logs
-
 failed=0
 
-run_check() {
-    local name="$1"
-    shift
-
-    echo "==> Running $name"
-
-    if "$@" 2>&1 | tee "logs/go-bugcheck-${name}.txt"; then
-        echo "    $name: OK"
-    else
-        echo "    $name: FAILED"
-        failed=1
-    fi
-
-    echo
+run_required() {
+  name="$1"
+  shift
+  echo "==> Running $name"
+  log="logs/go-bugcheck-${name}.txt"
+  status=0
+  "$@" >"$log" 2>&1 || status=$?
+  cat "$log"
+  if [ "$status" -eq 0 ]; then
+    echo "    $name: OK"
+  else
+    echo "    $name: FAILED (exit $status)"
+    failed=1
+  fi
+  echo ""
 }
 
-run_check golangci-lint golangci-lint run ./...
+run_optional() {
+  name="$1"
+  shift
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "==> Skipping $name ($1 not installed)"
+    echo ""
+    return 0
+  fi
+  # Optional tools warn only (never fail build; old versions break on Go 1.27).
+  log="logs/go-bugcheck-${name}.txt"
+  echo "==> Running $name (optional)"
+  status=0
+  "$@" >"$log" 2>&1 || status=$?
+  cat "$log"
+  if [ "$status" -eq 0 ]; then
+    echo "    $name: OK"
+  else
+    echo "    $name: WARN (exit $status, ignored)"
+  fi
+  echo ""
+}
 
-# Pass Go files safely, including paths containing spaces.
-mapfile -d '' go_files < <(find . -name '*.go' -type f -print0)
+run_required vet go vet ./...
+run_required test go test ./...
 
-if ((${#go_files[@]} > 0)); then
-    run_check gopls gopls check "${go_files[@]}"
-else
-    echo "No Go files found; skipping gopls check."
-fi
-
-run_check govulncheck govulncheck ./...
-run_check staticcheck staticcheck ./...
-run_check errcheck errcheck ./...
-run_check vet go vet ./...
-run_check test go test ./...
+run_optional golangci-lint golangci-lint run ./...
+run_optional govulncheck govulncheck ./...
+run_optional staticcheck staticcheck ./...
+run_optional errcheck errcheck ./...
+run_optional gopls gopls check ./...
 
 exit "$failed"

@@ -1,0 +1,140 @@
+// Package record spawns a shell in a PTY and saves a .yml recording.
+// Port of ref/commands/record.js (minus share prompt).
+package record
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/CHE3MZ/termrec/internal/config"
+	"github.com/CHE3MZ/termrec/internal/recording"
+	"golang.org/x/term"
+)
+
+// splitCommand is a minimal shell-like splitter (handles single/double quotes).
+func splitCommand(s string) []string {
+	var out []string
+	var cur strings.Builder
+	var quote rune
+	esc := false
+	for _, r := range s {
+		switch {
+		case esc:
+			cur.WriteRune(r)
+			esc = false
+		case r == '\\' && quote == 0:
+			esc = true
+		case quote != 0 && r == quote:
+			quote = 0
+		case quote == 0 && (r == '"' || r == '\''):
+			quote = r
+		case quote == 0 && (r == ' ' || r == '\t'):
+			if cur.Len() > 0 {
+				out = append(out, cur.String())
+				cur.Reset()
+			}
+		default:
+			cur.WriteRune(r)
+		}
+	}
+	if cur.Len() > 0 {
+		out = append(out, cur.String())
+	}
+	return out
+}
+
+// Run records a session and writes outPath (.yml appended if missing).
+func Run(cfg config.Config, outPath, commandOverride string) (string, error) {
+	if commandOverride != "" {
+		cfg.Command = &commandOverride
+	}
+	// console size fallback
+	w, h, err := term.GetSize(int(os.Stdout.Fd()))
+	fbCols, fbRows := 80, 24
+	if err == nil {
+		fbCols, fbRows = w, h
+	}
+	config.Normalize(&cfg, fbCols, fbRows)
+	resolved := config.ResolveFilePath(outPath, "yml")
+
+	args := splitCommand(strings.TrimSpace(*cfg.Command))
+	if len(args) == 0 {
+		return "", fmt.Errorf("empty command")
+	}
+	// Build env
+	env := os.Environ()
+	for k, v := range cfg.Env {
+		env = append(env, k+"="+v)
+	}
+
+	fmt.Println("The recording session is started")
+	fmt.Println("Press CTRL+D (or type `exit`) to exit and save the recording")
+
+	// Start PTY via creack/pty (Unix; on Windows uses ConPTY when available).
+	ptmx, proc, err := startPty(args[0], args[1:], cfg, env)
+	if err != nil {
+		return "", err
+	}
+	defer ptmx.Close()
+
+	// Raw mode for stdin so keys pass through.
+	oldState, rawErr := term.MakeRaw(int(os.Stdin.Fd()))
+	if rawErr == nil {
+		defer term.Restore(int(os.Stdin.Fd()), oldState)
+	}
+	// Bridge stdin -> pty
+	go func() {
+		_, _ = io.Copy(ptmx, os.Stdin)
+	}()
+
+	records := []recording.Record{}
+	last := time.Now()
+	// Seed first timestamp like ref (lastRecordTimestamp starts at spawn)
+	buf := make([]byte, 8192)
+	coalesce := func(content []byte, dur time.Duration) {
+		ms := dur.Milliseconds()
+		if ms < 0 {
+			ms = 0
+		}
+		if ms < 5 && len(records) > 0 {
+			records[len(records)-1].Content += string(content)
+			return
+		}
+		records = append(records, recording.Record{Delay: ms, Content: string(content)})
+	}
+	// Initial zero-delay anchor? ref pushes on first data with duration since spawn.
+	for {
+		n, rerr := ptmx.Read(buf)
+		now := time.Now()
+		if n > 0 {
+			chunk := make([]byte, n)
+			copy(chunk, buf[:n])
+			_, _ = os.Stdout.Write(chunk)
+			coalesce(chunk, now.Sub(last))
+			last = now
+		}
+		if rerr != nil {
+			break
+		}
+	}
+	_, _ = proc.Wait()
+	// Restore terminal (deferred) + pause stdin like ref
+	if rawErr == nil {
+		_ = term.Restore(int(os.Stdin.Fd()), oldState)
+	}
+
+	if len(records) == 0 {
+		records = append(records, recording.Record{Delay: 100, Content: ""})
+	}
+	if err := recording.Save(resolved, recording.File{Config: cfg, Records: records}); err != nil {
+		return "", err
+	}
+	fmt.Println("Successfully Recorded")
+	fmt.Println("The recording data is saved into the file:")
+	fmt.Println(resolved)
+	fmt.Println("You can edit the file and even change the configurations.")
+	return resolved, nil
+}

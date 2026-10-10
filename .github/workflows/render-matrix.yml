@@ -1,0 +1,32 @@
+name: render-matrix
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * *'
+
+jobs:
+  render:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          cache: true
+      - name: Build
+        run: sh scripts/ops/build.sh
+        shell: sh
+      - name: Render all fixtures
+        run: |
+          for f in testdata/*.yml; do
+            base=$(basename "$f" .yml)
+            go run ./cmd/termrec render "$f" -o "dist/${base}-${{ matrix.os }}.gif" -s 1
+          done
+        shell: sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gifs-${{ matrix.os }}
+          path: dist/*.gif
