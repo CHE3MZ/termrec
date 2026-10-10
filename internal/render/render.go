@@ -12,6 +12,7 @@ import (
 )
 
 // qualityToColors maps 1-100 to GIF palette size. stdlib has no quality knob.
+// One slot is reserved for transparency when the frame needs it.
 func qualityToColors(q int) int {
 	if q <= 0 {
 		q = 75
@@ -39,6 +40,8 @@ func repeatToLoopCount(r int) int {
 }
 
 // Render converts a recording to an animated GIF.
+// Transparency is preserved: theme background "transparent" (the default)
+// yields transparent GIF pixels; no white flattening is applied.
 func Render(rec recording.File, outPath string, qualityOverride int, step int) (string, error) {
 	if step <= 0 {
 		step = 1
@@ -86,9 +89,9 @@ func Render(rec recording.File, outPath string, qualityOverride int, step int) (
 		}
 		stepsCounter = (stepsCounter + 1) % step
 		snap := term.Snapshot()
-		img := DrawFrame(snap, term.CurX, term.CurY, cfg)
+		img := DrawFrame(snap, term.CurX, term.CurY, term.CursorVisible, cfg)
 		img = applyWatermark(img, cfg)
-		img = flatten(img)
+		// NOTE: no flatten() — transparency is the default (see gifutil.go).
 		// delay = next frame's delay (ref/render.js:237), % len for last frame
 		nextDelay := rec.Records[(i+1)%len(rec.Records)].Delay
 		frames = append(frames, frame{img: img, delay: int(nextDelay)})
@@ -106,14 +109,10 @@ func Render(rec recording.File, outPath string, qualityOverride int, step int) (
 		if d10 > 65535 {
 			d10 = 65535
 		}
-		// Quantize: use palette with numColors via Floyd-Steinberg? stdlib gif.Encode needs Paletted.
-		// Build paletted frame via median-cut-ish: use image palette via gif.Encode with NumColors option is not exposed,
-		// so dither manually by encoding through a temp GIF with palette limit.
-		pm := image.NewPaletted(fr.img.Bounds(), paletteFor(fr.img, numColors))
-		ditherCopy(pm, fr.img)
+		pm := rgbaToPaletted(fr.img, numColors)
 		out.Image = append(out.Image, pm)
 		out.Delay = append(out.Delay, d10)
-		// Disposal: leave previous (1 = do not dispose) matches terminal frames
+		// Full snapshots: leave previous in place (matches terminal frames).
 		out.Disposal = append(out.Disposal, 1)
 	}
 	if outPath == "" {

@@ -4,7 +4,7 @@ tasks:
   build:
     desc: Build termrec binary into dist/
     cmds:
-      - sh scripts/ops/build.sh
+      - sh scripts/build.sh
 
   vet:
     desc: go vet only (quick)
@@ -35,7 +35,7 @@ tasks:
   render-sample:
     desc: Smoke render testdata/demo.yml -> dist/demo.gif
     cmds:
-      - sh scripts/ops/render-sample.sh
+      - sh scripts/render-sample.sh
 
   default:
     desc: build

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Smoke render: testdata/demo.yml -> dist/demo.gif. POSIX sh only.
 set -eu
-cd "$(dirname "$0")/../.."
+cd "$(dirname "$0")/.."
 mkdir -p dist
 mkdir -p logs
 echo "==> render-sample"

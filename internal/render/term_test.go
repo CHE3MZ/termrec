@@ -1,6 +1,12 @@
 package render
 
-import "testing"
+import (
+	"image/gif"
+	"os"
+	"testing"
+
+	"github.com/CHE3MZ/termrec/internal/recording"
+)
 
 func TestSGRColors(t *testing.T) {
 	term := NewTerminal(10, 2)
@@ -15,7 +21,7 @@ func TestSGRColors(t *testing.T) {
 
 func TestNewlineAndCursor(t *testing.T) {
 	term := NewTerminal(5, 3)
-	term.Feed("AB\nCD")
+	term.Feed("AB\r\nCD")
 	if term.Grid[0][0].Ch != 'A' || term.Grid[1][0].Ch != 'C' {
 		t.Fatalf("newline: %+v", term.Grid)
 	}
@@ -49,6 +55,46 @@ func TestBrightAndErase(t *testing.T) {
 	}
 }
 
+func TestSGR256AndTruecolor(t *testing.T) {
+	term := NewTerminal(8, 2)
+	term.Feed("\x1b[38;5;196mX")
+	if term.Grid[0][0].FGCustom == nil {
+		t.Fatalf("256-color fg not stored: %+v", term.Grid[0][0])
+	}
+	term.Feed("\x1b[0m\x1b[48;2;10;20;30mY")
+	if term.Grid[0][1].BGCustom == nil {
+		t.Fatalf("truecolor bg not stored: %+v", term.Grid[0][1])
+	}
+	c := *term.Grid[0][1].BGCustom
+	if c.R != 10 || c.G != 20 || c.B != 30 {
+		t.Fatalf("truecolor value: %+v", c)
+	}
+}
+
+func TestCursorVisibility(t *testing.T) {
+	term := NewTerminal(8, 2)
+	if !term.CursorVisible {
+		t.Fatalf("default visible")
+	}
+	term.Feed("\x1b[?25l")
+	if term.CursorVisible {
+		t.Fatalf("hide failed")
+	}
+	term.Feed("\x1b[?25h")
+	if !term.CursorVisible {
+		t.Fatalf("show failed")
+	}
+}
+
+func TestAltScreenClears(t *testing.T) {
+	term := NewTerminal(8, 2)
+	term.Feed("hi")
+	term.Feed("\x1b[?1049h")
+	if term.Grid[0][0].Ch != ' ' {
+		t.Fatalf("alt screen should clear")
+	}
+}
+
 func TestFrameSizes(t *testing.T) {
 	cfgs := []string{"null", "window", "floating", "solid"}
 	for _, ft := range cfgs {
@@ -57,9 +103,91 @@ func TestFrameSizes(t *testing.T) {
 		cfg := testConfig(s, &title)
 		term := NewTerminal(20, 5)
 		term.Feed("hello")
-		img := DrawFrame(term.Snapshot(), term.CurX, term.CurY, cfg)
+		img := DrawFrame(term.Snapshot(), term.CurX, term.CurY, term.CursorVisible, cfg)
 		if img.Bounds().Dx() <= 0 || img.Bounds().Dy() <= 0 {
 			t.Fatalf("%s zero size", ft)
 		}
+	}
+}
+
+// CSS-exact geometry: window titlebar 22px + body pad 10; floating 34 + 20.
+func TestFrameGeometryCSS(t *testing.T) {
+	title := "T"
+	term := NewTerminal(20, 5)
+	term.Feed("hi")
+	snap := term.Snapshot()
+	cw, ch := cellSize(testConfig("null", nil))
+	termW, termH := 20*cw, 5*ch
+
+	wcfg := testConfig("window", &title)
+	wimg := DrawFrame(snap, term.CurX, term.CurY, true, wcfg)
+	// card = term + 2*10 pad, +22 title; outer = card + 2*18 margin + 18 shadow glow
+	wantW := termW + 20 + 36 + 18
+	wantH := termH + 20 + 22 + 36 + 18
+	if wimg.Bounds().Dx() != wantW || wimg.Bounds().Dy() != wantH {
+		t.Fatalf("window geometry: got %dx%d want %dx%d", wimg.Bounds().Dx(), wimg.Bounds().Dy(), wantW, wantH)
+	}
+
+	fcfg := testConfig("floating", &title)
+	fimg := DrawFrame(snap, term.CurX, term.CurY, true, fcfg)
+	wantW = termW + 40 + 36 + 18
+	wantH = termH + 40 + 34 + 36 + 18
+	if fimg.Bounds().Dx() != wantW || fimg.Bounds().Dy() != wantH {
+		t.Fatalf("floating geometry: got %dx%d want %dx%d", fimg.Bounds().Dx(), fimg.Bounds().Dy(), wantW, wantH)
+	}
+}
+
+// Transparent by default: default theme bg is "transparent", so a fresh
+// floating render must contain transparent pixels and the GIF must flag them.
+func TestTransparentDefault(t *testing.T) {
+	title := "T"
+	cfg := testConfig("floating", &title) // default theme bg transparent
+	term := NewTerminal(10, 3)
+	snap := term.Snapshot()
+	img := DrawFrame(snap, term.CurX, term.CurY, true, cfg)
+	found := false
+	for i := 3; i < len(img.Pix); i += 4 {
+		if img.Pix[i] < 128 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected transparent pixels in default floating frame (corners/margins)")
+	}
+	// end-to-end: render GIF and check transparency survives encoding
+	rec := recording.File{Config: cfg, Records: []recording.Record{
+		{Delay: 200, Content: "hi\r\n"},
+		{Delay: 200, Content: "yo\r\n"},
+	}}
+	path := t.TempDir() + "/out.gif"
+	out, err := Render(rec, path, 0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	g, err := gif.DecodeAll(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transparentFrame := false
+	for _, pm := range g.Image {
+		for _, c := range pm.Palette {
+			r, gg, b, a := c.RGBA()
+			_ = r
+			_ = gg
+			_ = b
+			if a == 0 {
+				transparentFrame = true
+				break
+			}
+		}
+	}
+	if !transparentFrame {
+		t.Fatalf("expected GIF palette transparency")
 	}
 }

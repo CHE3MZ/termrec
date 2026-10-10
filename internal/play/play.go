@@ -46,7 +46,7 @@ func Run(rec recording.File, realTiming bool, speedFactor float64) {
 		default:
 		}
 		if r.Delay > 0 {
-			time.Sleep(time.Duration(float64(r.Delay)*float64(time.Millisecond)))
+			time.Sleep(time.Duration(float64(r.Delay) * float64(time.Millisecond)))
 		}
 		fmt.Print(r.Content)
 	}

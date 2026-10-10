@@ -98,23 +98,23 @@ type Watermark struct {
 
 // Config mirrors ref/config.yml top-level keys.
 type Config struct {
-	Command      *string           `yaml:"command"`
-	Cwd          *string           `yaml:"cwd"`
-	Env          map[string]string `yaml:"env"`
-	Cols         AutoInt           `yaml:"cols"`
-	Rows         AutoInt           `yaml:"rows"`
-	Repeat       int               `yaml:"repeat"`
-	Quality      int               `yaml:"quality"`
-	FrameDelay   AutoFloat         `yaml:"frameDelay"`
-	MaxIdleTime  AutoFloat         `yaml:"maxIdleTime"`
-	FrameBox     FrameBox          `yaml:"frameBox"`
-	Watermark    Watermark         `yaml:"watermark"`
-	CursorStyle  string            `yaml:"cursorStyle"`
-	FontFamily   string            `yaml:"fontFamily"`
-	FontSize     int               `yaml:"fontSize"`
-	LineHeight   float64           `yaml:"lineHeight"`
-	LetterSpacing int              `yaml:"letterSpacing"`
-	Theme        map[string]string `yaml:"theme"`
+	Command       *string           `yaml:"command"`
+	Cwd           *string           `yaml:"cwd"`
+	Env           map[string]string `yaml:"env"`
+	Cols          AutoInt           `yaml:"cols"`
+	Rows          AutoInt           `yaml:"rows"`
+	Repeat        int               `yaml:"repeat"`
+	Quality       int               `yaml:"quality"`
+	FrameDelay    AutoFloat         `yaml:"frameDelay"`
+	MaxIdleTime   AutoFloat         `yaml:"maxIdleTime"`
+	FrameBox      FrameBox          `yaml:"frameBox"`
+	Watermark     Watermark         `yaml:"watermark"`
+	CursorStyle   string            `yaml:"cursorStyle"`
+	FontFamily    string            `yaml:"fontFamily"`
+	FontSize      int               `yaml:"fontSize"`
+	LineHeight    float64           `yaml:"lineHeight"`
+	LetterSpacing int               `yaml:"letterSpacing"`
+	Theme         map[string]string `yaml:"theme"`
 }
 
 // DefaultYAML is embedded default config, byte-compatible keys with ref/config.yml.

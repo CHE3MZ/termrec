@@ -1,7 +1,7 @@
 #!/bin/sh
 # Build termrec into dist/. POSIX sh, no bashisms.
 set -eu
-cd "$(dirname "$0")/../.."
+cd "$(dirname "$0")/.."
 mkdir -p dist
 mkdir -p logs
 echo "==> Building termrec"

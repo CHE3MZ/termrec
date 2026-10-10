@@ -2,7 +2,6 @@ package render
 
 import (
 	"image"
-	"image/color"
 	"image/draw"
 	_ "image/png"
 	"os"
@@ -12,14 +11,21 @@ import (
 	"github.com/CHE3MZ/termrec/internal/config"
 )
 
-// applyWatermark overlays a local PNG onto base. Remote URLs are ignored (privacy).
+// applyWatermark overlays a local PNG onto base (frame-relative, CSS absolute).
+// Remote URLs are ignored (privacy). Supports right/bottom (default 15px),
+// top/left overrides, width/height scaling, opacity.
 func applyWatermark(base *image.RGBA, cfg config.Config) *image.RGBA {
 	if cfg.Watermark.ImagePath == nil || strings.TrimSpace(*cfg.Watermark.ImagePath) == "" {
 		return base
 	}
 	p := strings.TrimSpace(*cfg.Watermark.ImagePath)
-	if strings.HasPrefix(strings.ToLower(p), "http://") || strings.HasPrefix(strings.ToLower(p), "https://") {
+	low := strings.ToLower(p)
+	if strings.HasPrefix(low, "http://") || strings.HasPrefix(low, "https://") {
 		// privacy: never fetch remote watermark
+		return base
+	}
+	// data: URLs not supported either (keep local-file only)
+	if strings.HasPrefix(low, "data:") {
 		return base
 	}
 	f, err := os.Open(p)
@@ -31,10 +37,17 @@ func applyWatermark(base *image.RGBA, cfg config.Config) *image.RGBA {
 	if err != nil {
 		return base
 	}
-	targetW := parsePx(styleGetLower(cfg.Watermark.Style, "width"), src.Bounds().Dx())
-	opacity := parseOpacity(styleGetLower(cfg.Watermark.Style, "opacity"), 0.9)
-	scaled := scaleNearest(src, targetW)
-	// apply opacity
+	st := cfg.Watermark.Style
+	targetW := parsePx(styleGetLower(st, "width"), 0)
+	targetH := parsePx(styleGetLower(st, "height"), 0)
+	sw, sh := src.Bounds().Dx(), src.Bounds().Dy()
+	if targetW <= 0 && targetH <= 0 {
+		targetW = 100 // CSS default in ref/config.yml
+	}
+	scaled := scaleBox(src, targetW, targetH)
+	_ = sw
+	_ = sh
+	opacity := parseOpacity(styleGetLower(st, "opacity"), 0.9)
 	b := scaled.Bounds()
 	tmp := image.NewRGBA(b)
 	draw.Draw(tmp, b, scaled, image.Point{}, draw.Src)
@@ -43,10 +56,20 @@ func applyWatermark(base *image.RGBA, cfg config.Config) *image.RGBA {
 			tmp.Pix[i] = uint8(float64(tmp.Pix[i]) * opacity)
 		}
 	}
-	right := parsePx(styleGetLower(cfg.Watermark.Style, "right"), 15)
-	bottom := parsePx(styleGetLower(cfg.Watermark.Style, "bottom"), 15)
-	x := base.Bounds().Dx() - tmp.Bounds().Dx() - right
-	y := base.Bounds().Dy() - tmp.Bounds().Dy() - bottom
+	// position: default right:15 bottom:15; top/left override when set
+	var x, y int
+	if v := styleGetLower(st, "left"); strings.TrimSpace(v) != "" {
+		x = parsePx(v, 15)
+	} else {
+		right := parsePx(styleGetLower(st, "right"), 15)
+		x = base.Bounds().Dx() - tmp.Bounds().Dx() - right
+	}
+	if v := styleGetLower(st, "top"); strings.TrimSpace(v) != "" {
+		y = parsePx(v, 15)
+	} else {
+		bottom := parsePx(styleGetLower(st, "bottom"), 15)
+		y = base.Bounds().Dy() - tmp.Bounds().Dy() - bottom
+	}
 	if x < 0 {
 		x = 0
 	}
@@ -73,7 +96,7 @@ func parsePx(s string, def int) int {
 		return def
 	}
 	n, err := strconv.Atoi(s)
-	if err != nil || n <= 0 {
+	if err != nil || n < 0 {
 		return def
 	}
 	return n
@@ -97,22 +120,35 @@ func parseOpacity(s string, def float64) float64 {
 	return f
 }
 
-func scaleNearest(src image.Image, targetW int) image.Image {
+// scaleBox scales src to targetW x targetH (either may be 0 = keep aspect).
+func scaleBox(src image.Image, targetW, targetH int) image.Image {
 	sb := src.Bounds()
 	sw, sh := sb.Dx(), sb.Dy()
-	if targetW <= 0 || targetW == sw {
+	if targetW <= 0 && targetH <= 0 {
 		return src
 	}
-	ratio := float64(targetW) / float64(sw)
-	targetH := int(float64(sh) * ratio)
+	if targetW <= 0 {
+		targetW = int(float64(sw)*float64(targetH)/float64(sh) + 0.5)
+	}
+	if targetH <= 0 {
+		targetH = int(float64(sh)*float64(targetW)/float64(sw) + 0.5)
+	}
+	if targetW <= 0 {
+		targetW = 1
+	}
 	if targetH <= 0 {
 		targetH = 1
 	}
+	if targetW == sw && targetH == sh {
+		return src
+	}
 	dst := image.NewRGBA(image.Rect(0, 0, targetW, targetH))
+	rx := float64(sw) / float64(targetW)
+	ry := float64(sh) / float64(targetH)
 	for y := 0; y < targetH; y++ {
 		for x := 0; x < targetW; x++ {
-			sx := int(float64(x) / ratio)
-			sy := int(float64(y) / ratio)
+			sx := int(float64(x)*rx + 0.5)
+			sy := int(float64(y)*ry + 0.5)
 			if sx >= sw {
 				sx = sw - 1
 			}
@@ -123,13 +159,4 @@ func scaleNearest(src image.Image, targetW int) image.Image {
 		}
 	}
 	return dst
-}
-
-// ensure opaque flattens alpha onto white for GIF encoding.
-func flatten(img *image.RGBA) *image.RGBA {
-	out := image.NewRGBA(img.Bounds())
-	white := &image.Uniform{color.RGBA{0xff, 0xff, 0xff, 0xff}}
-	draw.Draw(out, out.Bounds(), white, image.Point{}, draw.Src)
-	draw.Draw(out, out.Bounds(), img, image.Point{}, draw.Over)
-	return out
 }

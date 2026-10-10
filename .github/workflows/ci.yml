@@ -13,13 +13,13 @@ jobs:
           go-version: '1.27'
           cache: true
       - name: Build
-        run: sh scripts/ops/build.sh
+        run: sh scripts/build.sh
       - name: Bugcheck (vet+test+optional linters)
         run: sh scripts/ops/go-bugcheck.sh
       - name: Seccheck
         run: sh scripts/ops/go-seccheck.sh
       - name: Smoke render
-        run: sh scripts/ops/render-sample.sh
+        run: sh scripts/render-sample.sh
       - name: No share/network check
         run: |
           echo "==> checking for forbidden share/upload code"
