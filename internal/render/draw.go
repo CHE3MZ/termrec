@@ -32,8 +32,8 @@ func resolveCellColors(cell Cell, colors map[string]color.RGBA, defBG color.RGBA
 }
 
 // drawTerminal renders a grid snapshot to RGBA without frame.
-// Transparent theme background stays transparent (no flattening here);
-// GIF encoding preserves it (see gif.go).
+// A "transparent" theme background stays transparent here; DrawFrame
+// flattens the composed frame onto the white page (see flattenToWhite).
 func drawTerminal(grid [][]Cell, cfg config.Config, colors map[string]color.RGBA, transparentBG bool, ss int) *image.RGBA {
 	rows := len(grid)
 	cols := 0
@@ -122,6 +122,11 @@ func DrawFrame(grid [][]Cell, curX, curY int, cursorVisible bool, cfg config.Con
 		termImg = drawCursor(termImg, grid, curX, curY, cfg, colors, trans["background"], renderSS)
 	}
 	big := applyFrameBox(termImg, cfg, colors, trans["background"], renderSS)
+	// The reference renderer captures a browser page whose body background
+	// is white, so every ref GIF is fully opaque: white margins with a
+	// smooth gray shadow ramp. Flatten here (before the downscale) so the
+	// glow blends smoothly instead of stippling against transparency.
+	big = flattenToWhite(big)
 	// Target 1x dims from the unscaled layout.
 	cw1, ch1 := cellSize(cfg)
 	rows := len(grid)
@@ -137,6 +142,15 @@ func DrawFrame(grid [][]Cell, curX, curY int, cursorVisible bool, cfg config.Con
 		return big
 	}
 	return downscaleRGBA(big, target.Dx(), target.Dy())
+}
+
+// flattenToWhite composites img over an opaque white page (ref CSS:
+// body { background-color: white }). Output is fully opaque.
+func flattenToWhite(img *image.RGBA) *image.RGBA {
+	out := image.NewRGBA(img.Bounds())
+	draw.Draw(out, out.Bounds(), &image.Uniform{color.RGBA{0xff, 0xff, 0xff, 0xff}}, image.Point{}, draw.Src)
+	draw.Draw(out, out.Bounds(), img, image.Point{}, draw.Over)
+	return out
 }
 
 // downscaleRGBA area-averages src to w x h with premultiplied alpha,

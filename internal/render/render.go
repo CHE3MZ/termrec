@@ -79,8 +79,9 @@ func repeatToLoopCount(r int) int {
 }
 
 // Render converts a recording to an animated GIF.
-// Transparency is preserved: theme background "transparent" (the default)
-// yields transparent GIF pixels; no white flattening is applied.
+// Frames are flattened onto an opaque white page (ref parity: the browser
+// body background is white, so ref GIFs are fully opaque with a smooth
+// shadow ramp and no transparency stipple).
 func Render(rec recording.File, outPath string, qualityOverride int, step int) (string, error) {
 	if step <= 0 {
 		step = 1
@@ -128,10 +129,11 @@ func Render(rec recording.File, outPath string, qualityOverride int, step int) (
 		}
 		stepsCounter = (stepsCounter + 1) % step
 		snap := term.Snapshot()
-		// DrawFrame composes at 2x + downscales (smooth) and applies the
-		// watermark frame-relative (CSS: prepended to .terminalizer-frame).
+		// DrawFrame composes at 2x + downscales (smooth), flattens onto the
+		// white page, and applies the watermark frame-relative
+		// (CSS: prepended to .terminalizer-frame).
 		img := DrawFrame(snap, term.CurX, term.CurY, term.CursorVisible, cfg)
-		// NOTE: no flatten() — transparency is the default (see gifutil.go).
+		// NOTE: DrawFrame already flattened onto the opaque white page.
 		// delay = next frame's delay (ref/render.js:237), % len for last frame
 		nextDelay := rec.Records[(i+1)%len(rec.Records)].Delay
 		frames = append(frames, frame{img: img, delay: int(nextDelay)})
