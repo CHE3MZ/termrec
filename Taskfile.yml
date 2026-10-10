@@ -46,3 +46,5 @@ tasks:
     desc: build
     cmds:
       - task: build
+      - task: render-sample
+      - task: render-check
