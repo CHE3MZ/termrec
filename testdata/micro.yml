@@ -51,20 +51,82 @@ config:
 records:
   - delay: 600
     content: "\x1b[37m$\x1b[0m "
-  - delay: 350
-    content: "micro main.go"
+  - delay: 110
+    content: "m"
+  - delay: 95
+    content: "i"
+  - delay: 105
+    content: "c"
+  - delay: 100
+    content: "r"
+  - delay: 115
+    content: "o"
+  - delay: 90
+    content: " "
+  - delay: 120
+    content: "m"
+  - delay: 100
+    content: "a"
+  - delay: 95
+    content: "i"
+  - delay: 110
+    content: "n"
+  - delay: 105
+    content: "."
+  - delay: 100
+    content: "g"
+  - delay: 115
+    content: "o"
   - delay: 800
     content: "\r\n\x1b[?1049h\x1b[2J\x1b[H\x1b[1;37m main.go [+]\x1b[0m\r\n\r\n \x1b[90m1 \x1b[0m\x1b[33mpackage\x1b[0m main\r\n \x1b[90m2\x1b[0m\r\n \x1b[90m3 \x1b[0m\x1b[33mimport\x1b[0m \x1b[32m\"fmt\"\x1b[0m\r\n \x1b[90m4\x1b[0m\r\n \x1b[90m5 \x1b[0m\x1b[33mfunc\x1b[0m \x1b[36mmain\x1b[0m() {\r\n \x1b[90m6 \x1b[0m    \x1b[36mfmt\x1b[0m.Println(\x1b[32m\"hi\"\x1b[0m) \x1b[38;5;208m// greet\x1b[0m\r\n \x1b[90m7 \x1b[0m}\r\n\r\n\r\n\r\n\r\n\r\n\r\n\x1b[44m\x1b[97m main.go [+]                                  6,22  unix  go\x1b[0m\r\n\r\n\x1b[90m ^Q Quit  ^S Save  ^F Find  ^Z Undo  ^Y Redo  ^K Cut\x1b[0m\x1b[8;23H"
   - delay: 600
     content: "\x1b[@!"
   - delay: 700
     content: "\x1b[17;1H\x1b[32mSaved main.go\x1b[0m\x1b[8;24H"
-  - delay: 600
-    content: "\x1b[9;5H \x1b[38;5;208m// shipped\x1b[0m"
+  - delay: 150
+    content: "\x1b[9;5H "
+  - delay: 120
+    content: "\x1b[38;5;208m/"
+  - delay: 100
+    content: "/"
+  - delay: 95
+    content: " "
+  - delay: 110
+    content: "s"
+  - delay: 100
+    content: "h"
+  - delay: 105
+    content: "i"
+  - delay: 95
+    content: "p"
+  - delay: 110
+    content: "p"
+  - delay: 100
+    content: "e"
+  - delay: 115
+    content: "d"
   - delay: 800
     content: "\x1b[?1049l\x1b[2J\x1b[H\x1b[37m$\x1b[0m "
-  - delay: 500
-    content: "echo done\r\n"
+  - delay: 105
+    content: "e"
+  - delay: 95
+    content: "c"
+  - delay: 110
+    content: "h"
+  - delay: 100
+    content: "o"
+  - delay: 90
+    content: " "
+  - delay: 115
+    content: "d"
+  - delay: 100
+    content: "o"
+  - delay: 110
+    content: "n"
+  - delay: 105
+    content: "e"
+  - delay: 400
+    content: "\r\n"
   - delay: 800
     content: "done\r\n"
   - delay: 900

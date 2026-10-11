@@ -15,6 +15,7 @@
 - Fixtures: prompt `$` in white, not magenta.
 - Fixtures: new `micro` demo (full-screen editor session: syntax colors,
   256-color comment, insert edit, save message, quit) + `render-micro` task.
+  Command, comment, and `echo` are typed per keystroke; repaints stay instant.
 - Render: idle cursor blink — 700ms solid grace, then ~600ms off/on phases
   (capped at 8, pauses under ~1s stay single); hidden cursors never split.
 - Watermark kept (opt-in, off by default); skips and ignored style keys warn once to stderr.
