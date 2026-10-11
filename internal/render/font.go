@@ -61,6 +61,11 @@ func monoFaceFor(family string, px float64) font.Face {
 	if norm != "" {
 		if found, err := findSystemFont(family); err == nil && found != nil {
 			ft = found
+		} else {
+			// Say so once: silent fallback is exactly how a configured
+			// font goes unnoticed (family typo, uninstalled file, or a
+			// format we can't read like .ttc).
+			warnOnce("fontFamily %q not found, using embedded fallback", family)
 		}
 	}
 	if ft == nil {
@@ -332,6 +337,29 @@ func findSystemFont(family string) (*opentype.Font, error) {
 	if generic {
 		expanded = append(expanded, monos...)
 	}
+	// Windows registry first: display names ("Eager Naturalist") resolve
+	// cryptic file stems ("eager__.ttf") no filename scan can match.
+	// Registry hits win in list order; the directory scan below stays as
+	// fallback (plus non-Windows, where stems are usually sane).
+	if reg := registryFonts(); len(reg) > 0 {
+		for _, want := range wants {
+			if al, ok := aliases[want]; ok {
+				for _, a := range al {
+					if p, ok := reg[a]; ok {
+						if ft := openFontFile(p); ft != nil {
+							return ft, nil
+						}
+					}
+				}
+				continue
+			}
+			if p, ok := reg[want]; ok {
+				if ft := openFontFile(p); ft != nil {
+					return ft, nil
+				}
+			}
+		}
+	}
 	seenDirs := map[string]struct{}{}
 	for _, dir := range systemFontDirs() {
 		if _, ok := seenDirs[dir]; ok {
@@ -377,22 +405,29 @@ func findSystemFont(family string) (*opentype.Font, error) {
 				}
 			}
 			for _, path := range candidates {
-				data, err := os.ReadFile(path)
-				if err != nil {
-					continue
+				if ft := openFontFile(path); ft != nil {
+					return ft, nil
 				}
-				ft, err := opentype.Parse(data)
-				if err != nil {
-					continue
-				}
-				fontCacheMu.Lock()
-				fontCache["sys:"+path] = ft
-				fontCacheMu.Unlock()
-				return ft, nil
 			}
 		}
 	}
 	return nil, os.ErrNotExist
+}
+
+// openFontFile reads, parses, and caches a font file for system lookups.
+func openFontFile(path string) *opentype.Font {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	ft, err := opentype.Parse(data)
+	if err != nil {
+		return nil
+	}
+	fontCacheMu.Lock()
+	fontCache["sys:"+path] = ft
+	fontCacheMu.Unlock()
+	return ft
 }
 
 // titleFacePx returns the sans face at the given pixel size.

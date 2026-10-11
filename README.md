@@ -57,10 +57,11 @@ Deliberate (privacy / headless design):
 Approximations (custom engine, no browser):
 
 - Fonts: `fontFamily` is a first-match-wins list scanned against installed
-  system fonts (e.g. `fontFamily: "Eager Naturalist, Monospace"` once the
-  file is installed); `fontFile` points at an explicit `.ttf/.otf` and wins
+  system fonts — on Windows, registry display names resolve even cryptic
+  file stems (`fontFamily: "Eager Naturalist, Monospace"` finds `eager__.ttf`);
+  `fontFile` points at an explicit `.ttf/.otf` and wins
   over everything (use it for files that aren't installed). Anything missing
-  falls back per-rune through embedded Go Mono, so rendering works headless
+  warns once and falls back per-rune through embedded Go Mono, so rendering works headless
   with zero system fonts. Single weight only: bold is double-struck, italic
   is ignored, titlebar text is always the embedded sans, and proportional
   families will misalign columns (cells use one advance).

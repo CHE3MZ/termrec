@@ -112,8 +112,14 @@ records:
     content: "\r\n"
   - delay: 600
     content: "\x1b[1mBenchmark 1: echo hello world\x1b[0m\r\n"
+  - delay: 350
+    content: "\r  ██████████░░░░░░░░░░  48%   58/121    0.7ms"
+  - delay: 350
+    content: "\r  ████████████████░░░░  79%   96/121    0.7ms"
+  - delay: 400
+    content: "\r  ████████████████████  100%  121/121   0.7ms"
   - delay: 600
-    content: "  Time (mean ± σ):       0.7 ms ±   0.1 ms    [User: 0.4 ms, System: 0.2 ms]\r\n"
+    content: "\r\n  Time (mean ± σ):       0.7 ms ±   0.1 ms    [User: 0.4 ms, System: 0.2 ms]\r\n"
   - delay: 700
     content: "  Range (min … max):     0.5 ms …   1.1 ms    121 runs\r\n"
   - delay: 700

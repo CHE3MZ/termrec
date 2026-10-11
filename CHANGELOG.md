@@ -4,7 +4,11 @@
 - Fonts: new `fontFile` config key for explicit .ttf/.otf paths (wins over
   fontFamily, warns and falls back when unreadable); default face stays
   embedded Go Mono; Eager Naturalist covered by system + mechanics tests.
-- Fixtures: typed `hyperfine` benchmark demo + `render-hyperfine` task.
+- Fixtures: typed `hyperfine` benchmark demo (progress-bar frames, unicode
+  stats) + `render-hyperfine` task.
+- Fonts: Windows registry display-name lookup (cryptic stems like
+  eager__.ttf resolve); missing families warn once instead of silently
+  falling back.
 - Theme: default palette is now Dark (Visual Studio); background stays
   transparent and cursor stays #c7c7c7 (not in the source scheme).
 - Render: `--start-pause/--end-pause` hold edge frames (also `startPause`/
