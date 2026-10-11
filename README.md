@@ -56,11 +56,13 @@ Deliberate (privacy / headless design):
 
 Approximations (custom engine, no browser):
 
-- Fonts: embedded Go Mono / Go Regular with system-font lookup by filename,
-  vs Chromium's full font stack. Layout parity, not pixel parity. Glyphs are
-  resolved per rune across a fallback chain (family face, Go Mono, Go Regular,
-  basicfont), so mixed-coverage text degrades gracefully instead of tofu —
-  but color emoji still has no monochrome source and may box.
+- Fonts: `fontFamily` is a first-match-wins list scanned against installed
+  system fonts; `fontFile` points at an explicit `.ttf/.otf` and wins over
+  everything (use it for files that aren't installed). Anything missing falls
+  back per-rune through embedded Geist Mono Medium, so rendering works
+  headless with zero system fonts. Single weight only: bold is double-struck,
+  italic is ignored, titlebar text is always the embedded sans, and
+  proportional families will misalign columns (cells use one advance).
 - Terminal emulation covers SGR (incl. 256-color/truecolor, blink shown
   steady, strikethrough), cursor moves,
   erase, scroll, alt-screen-as-clear, scroll-regions-as-full, and double-width
@@ -84,5 +86,6 @@ task lint           # bugcheck + seccheck (same scripts CI runs)
 task test           # go test ./...
 task render-sample  # smoke render testdata/demo.yml
 task render-micro   # complex editor demo testdata/micro.yml
+task render-hyperfine  # typed benchmark demo testdata/hyperfine.yml
 task render-check   # all fixtures + step/quality variants + whitebg variants
 ```

@@ -42,20 +42,19 @@ tasks:
     cmds:
       - sh scripts/render-micro.sh
 
+  render-hyperfine:
+    desc: Typed benchmark demo testdata/hyperfine.yml -> dist/hyperfine.gif
+    cmds:
+      - sh scripts/render-hyperfine.sh
+
   render-check:
     desc: Render all fixtures + variants with verification
     cmds:
       - sh scripts/render-check.sh
-  clean-dist-dir:
-    desc: cleanup the dist dir
-    cmds:
-      - rm -rf dist
-      - mkdir -p dist
-    silent: true
+
   default:
     desc: build
     cmds:
-      - task: clean-dist-dir
       - task: build
       - task: render-sample
       - task: render-check

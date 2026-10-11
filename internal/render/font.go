@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/CHE3MZ/termrec/assets/fonts"
 	"github.com/CHE3MZ/termrec/internal/config"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
@@ -43,8 +44,8 @@ func monoFace(px float64) font.Face {
 }
 
 // monoFaceFor resolves cfg.FontFamily (CSS-like list, first available wins)
-// against installed system fonts, falling back to embedded Go Mono.
-// An empty family uses Go Mono directly.
+// against installed system fonts, falling back to embedded Geist Mono
+// Medium. An empty family uses the embedded face directly.
 func monoFaceFor(family string, px float64) font.Face {
 	if px <= 0 {
 		px = 12
@@ -65,9 +66,12 @@ func monoFaceFor(family string, px float64) font.Face {
 	}
 	if ft == nil {
 		var err error
-		ft, err = loadFont("gomono", gomono.TTF)
+		ft, err = loadFont("geistmono-medium", fonts.GeistMonoMedium)
 		if err != nil {
-			return basicfont.Face7x13
+			ft, err = loadFont("gomono", gomono.TTF)
+			if err != nil {
+				return basicfont.Face7x13
+			}
 		}
 	}
 	if face, err := opentype.NewFace(ft, &opentype.FaceOptions{
@@ -111,14 +115,60 @@ func embeddedFace(name string, data []byte, px float64) font.Face {
 	return basicfont.Face7x13
 }
 
+// fileFace loads an explicit .ttf/.otf path (config fontFile) at px size.
+// It wins over every family lookup, which is how uninstalled files like a
+// fresh download are used without a system install. ok=false on any failure
+// so callers fall through to the family face instead of degrading.
+func fileFace(path string, px float64) (font.Face, bool) {
+	if px <= 0 {
+		px = 12
+	}
+	key := "file:" + path + "-" + itoa(int(px*10))
+	fontCacheMu.Lock()
+	if f, ok := faceCache[key]; ok {
+		fontCacheMu.Unlock()
+		return f, true
+	}
+	fontCacheMu.Unlock()
+	if data, err := os.ReadFile(path); err == nil {
+		if ft, err := loadFont("file:"+path, data); err == nil {
+			if face, err := opentype.NewFace(ft, &opentype.FaceOptions{
+				Size:    px,
+				DPI:     72,
+				Hinting: font.HintingNone,
+			}); err == nil {
+				fontCacheMu.Lock()
+				faceCache[key] = face
+				fontCacheMu.Unlock()
+				return face, true
+			}
+		}
+	}
+	return nil, false
+}
+
+// primaryFace is the face cell metrics and the fallback chain start from:
+// the explicit fontFile when set and readable, else the resolved
+// fontFamily. An unreadable fontFile warns once and falls through.
+func primaryFace(cfg config.Config, px float64) font.Face {
+	if p := strings.TrimSpace(cfg.FontFile); p != "" {
+		if f, ok := fileFace(p, px); ok {
+			return f
+		}
+		warnOnce("fontFile %q unreadable, using fontFamily", p)
+	}
+	return monoFaceFor(cfg.FontFamily, px)
+}
+
 // monoFacesFor returns the per-rune fallback chain for terminal cells: the
-// resolved family face first, then embedded Go Mono, embedded Go Regular,
+// primary face first, then embedded Geist Mono Medium, Go Mono, Go Regular,
 // then basicfont. A single face rarely covers every rune a recording holds
 // (CJK/emoji/symbols), and Chromium falls back per glyph — this chain is
 // our version of that. Faces are cached; duplicates collapsed.
-func monoFacesFor(family string, px float64) []font.Face {
+func monoFacesFor(cfg config.Config, px float64) []font.Face {
 	chain := []font.Face{
-		monoFaceFor(family, px),
+		primaryFace(cfg, px),
+		embeddedFace("geistmono-medium", fonts.GeistMonoMedium, px),
 		embeddedFace("gomono", gomono.TTF, px),
 		embeddedFace("goregular", goregular.TTF, px),
 		basicfont.Face7x13,
@@ -205,6 +255,9 @@ func familyFileAliases() map[string][]string {
 		"firacode":       {"firacode"},
 		"hack":           {"hack"},
 		"inconsolata":    {"inconsolata"},
+		// installed Geist Mono ships per-weight files with no plain
+		// GeistMono.ttf: prefer Regular, then Medium, over Black/Bold.
+		"geistmono": {"geistmonoregular", "geistmonomedium", "geistmono"},
 	}
 }
 
@@ -421,7 +474,9 @@ func cellMetrics(cfg config.Config) (cellW, cellH, ascent int) {
 	if px <= 0 {
 		px = 12
 	}
-	face := monoFaceFor(cfg.FontFamily, px)
+	// Metrics come from the same primary face drawing uses (explicit
+	// fontFile included), so columns never misalign the glyphs.
+	face := primaryFace(cfg, px)
 	adv := font.MeasureString(face, "M").Ceil()
 	if adv <= 0 {
 		adv = 7

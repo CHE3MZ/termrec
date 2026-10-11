@@ -60,7 +60,7 @@ func drawTerminal(grid [][]Cell, cfg config.Config, colors map[string]color.RGBA
 	// Per-rune fallback chain (primary, Go Mono, Go Regular, basicfont):
 	// Chromium falls back per glyph, so a single face leaves tofu for
 	// CJK/emoji/symbols it doesn't cover. Baseline stays the primary's.
-	faces := monoFacesFor(cfg.FontFamily, px)
+	faces := monoFacesFor(cfg, px)
 
 	for y, row := range grid {
 		for x, cell := range row {
@@ -254,7 +254,7 @@ func drawCursor(termImg *image.RGBA, grid [][]Cell, curX, curY int, cfg config.C
 			d := &font.Drawer{
 				Dst:  termImg,
 				Src:  &image.Uniform{glyphCol},
-				Face: faceForRune(monoFacesFor(cfg.FontFamily, px), underCh),
+				Face: faceForRune(monoFacesFor(cfg, px), underCh),
 				Dot:  fixed.P(r.Min.X, r.Min.Y+ascent),
 			}
 			d.DrawString(string(underCh))
