@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Theme: default palette is now Dark (Visual Studio); background stays
+  transparent and cursor stays #c7c7c7 (not in the source scheme).
 - Render: window traffic-light dots sit 3px below the CSS center (eyeballed).
 - Render: shadow glow shifted 2px down (drop-shadow look on any background).
 - Render: `-b/--background` flag to flatten onto an opaque page color.

@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/CHE3MZ/termrec/internal/theme"
 )
 
 func TestLoadDefault(t *testing.T) {
@@ -25,6 +27,24 @@ func TestLoadDefault(t *testing.T) {
 	}
 	if c.FrameBox.Type == nil || *c.FrameBox.Type != "floating" {
 		t.Fatalf("frameBox.type")
+	}
+}
+
+// DefaultYAML theme and theme.Defaults() must stay in sync: two sources,
+// one palette (Dark Visual Studio).
+func TestDefaultThemeMatches(t *testing.T) {
+	c, err := Load([]byte(DefaultYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := theme.Defaults()
+	if len(c.Theme) != len(want) {
+		t.Fatalf("theme size: got %d want %d", len(c.Theme), len(want))
+	}
+	for k, v := range want {
+		if c.Theme[k] != v {
+			t.Fatalf("theme %q: DefaultYAML %q != Defaults() %q", k, c.Theme[k], v)
+		}
 	}
 }
 
