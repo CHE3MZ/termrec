@@ -32,13 +32,20 @@ func decodeGIF(t *testing.T, path string) *gif.GIF {
 	return g
 }
 
-// Every fixture must render to a valid GIF with matching frame/delay counts.
+// Every fixture must render to a valid GIF. Frame count follows the idle
+// blink rule: each kept record yields len(blinkChunks(nextDelay)) frames.
+// (Fixtures never hide the cursor and their delays survive Adjust, so the
+// expectation is computable up front.)
 func TestRenderAllFixtures(t *testing.T) {
 	fixtures := []string{"demo", "window", "null", "solid", "solid-notitle", "typing"}
 	for _, name := range fixtures {
 		t.Run(name, func(t *testing.T) {
 			rec := loadFixture(t, name)
-			wantFrames := len(rec.Records)
+			wantFrames := 0
+			for i := range rec.Records {
+				d := rec.Records[(i+1)%len(rec.Records)].Delay
+				wantFrames += len(blinkChunks(int(d)))
+			}
 			path := filepath.Join(t.TempDir(), name+".gif")
 			out, err := Render(rec, path, 0, 1, "")
 			if err != nil {
@@ -68,7 +75,8 @@ func TestRenderAllFixtures(t *testing.T) {
 	}
 }
 
-// Step filtering must reduce frame counts deterministically.
+// Step filtering must reduce frame counts deterministically (blink-aware:
+// each kept record yields len(blinkChunks(nextDelay)) frames).
 func TestRenderStep(t *testing.T) {
 	rec := loadFixture(t, "demo")
 	n := len(rec.Records)
@@ -80,7 +88,11 @@ func TestRenderStep(t *testing.T) {
 			t.Fatalf("step %d: %v", step, err)
 		}
 		g := decodeGIF(t, path)
-		want := (n + step - 1) / step
+		want := 0
+		for i := 0; i < n; i += step {
+			d := rec.Records[(i+1)%n].Delay
+			want += len(blinkChunks(int(d)))
+		}
 		if len(g.Image) != want {
 			t.Fatalf("step %d frames=%d want %d", step, len(g.Image), want)
 		}
@@ -113,6 +125,91 @@ func TestRenderRepeatMapping(t *testing.T) {
 		if got := repeatToLoopCount(tc.repeat); got != tc.want {
 			t.Fatalf("repeat %d -> %d want %d", tc.repeat, got, tc.want)
 		}
+	}
+}
+
+// Idle blink chunking: short pauses stay single, long pauses split into
+// ~500ms alternating phases, huge pauses cap out, totals stay exact.
+func TestBlinkChunks(t *testing.T) {
+	cases := []struct {
+		delay int
+		want  []int
+	}{
+		{100, []int{100}},
+		{500, []int{500}},
+		{600, []int{300, 300}},
+		{800, []int{400, 400}},
+		{1200, []int{400, 400, 400}},
+		{2000, []int{500, 500, 500, 500}},
+	}
+	for _, tc := range cases {
+		got := blinkChunks(tc.delay)
+		if len(got) != len(tc.want) {
+			t.Fatalf("delay %d: %v want %v", tc.delay, got, tc.want)
+		}
+		sum := 0
+		for i, d := range got {
+			sum += d
+			if d != tc.want[i] {
+				t.Fatalf("delay %d: %v want %v", tc.delay, got, tc.want)
+			}
+		}
+		if sum != tc.delay {
+			t.Fatalf("delay %d: chunks sum %d", tc.delay, sum)
+		}
+	}
+	if got := blinkChunks(60000); len(got) != maxBlinkPhases {
+		t.Fatalf("huge delay: %d phases want cap %d", len(got), maxBlinkPhases)
+	} else {
+		sum := 0
+		for _, d := range got {
+			sum += d
+		}
+		if sum != 60000 {
+			t.Fatalf("huge delay: chunks sum %d", sum)
+		}
+	}
+}
+
+// An idle pause must render alternating cursor on/off frames with the same
+// total duration; a hidden cursor (?25l) must not split at all.
+func TestBlinkRender(t *testing.T) {
+	mkrec := func(hide bool) recording.File {
+		title := "T"
+		cfg := testConfig("null", &title)
+		content := "hi\r\n"
+		if hide {
+			content = "\x1b[?25lhi\r\n"
+		}
+		return recording.File{Config: cfg, Records: []recording.Record{
+			{Delay: 200, Content: content},
+			{Delay: 1200, Content: "yo\r\n"},
+		}}
+	}
+	// frame 1 shows for next delay 1200 -> 3 phases (400 on/off/on);
+	// frame 2 shows for next delay 200 -> single.
+	path := filepath.Join(t.TempDir(), "blink.gif")
+	if _, err := Render(mkrec(false), path, 100, 1, ""); err != nil {
+		t.Fatal(err)
+	}
+	g := decodeGIF(t, path)
+	if len(g.Image) != 4 {
+		t.Fatalf("blink frames=%d want 4", len(g.Image))
+	}
+	sum10 := 0
+	for _, d := range g.Delay {
+		sum10 += d
+	}
+	if sum10 != 140 { // (400+400+400+200)/10
+		t.Fatalf("blink total %d00ms want 1400ms", sum10)
+	}
+	// hidden cursor: same recording, no split -> 2 frames
+	path2 := filepath.Join(t.TempDir(), "noblink.gif")
+	if _, err := Render(mkrec(true), path2, 100, 1, ""); err != nil {
+		t.Fatal(err)
+	}
+	if g2 := decodeGIF(t, path2); len(g2.Image) != 2 {
+		t.Fatalf("hidden cursor frames=%d want 2", len(g2.Image))
 	}
 }
 

@@ -99,6 +99,37 @@ func repeatToLoopCount(r int) int {
 	return r
 }
 
+// blinkCycle is the idle cursor blink granularity in ms: 500 on, 500 off,
+// like xterm's default. Frames pausing longer than one cycle split into
+// alternating visible/hidden phases, so the cursor blinks during idles
+// instead of sitting as a still blob. Active typing (short delays) stays a
+// single visible frame: typing never strobes.
+const blinkCycle = 500
+
+// maxBlinkPhases caps the split so one huge uncapped pause (maxIdleTime:
+// auto) can't explode into hundreds of near-identical frames. The last
+// phase absorbs the remainder, so total duration is always exact.
+const maxBlinkPhases = 8
+
+// blinkChunks splits delay into alternating on/off phase durations,
+// starting visible. Delays within one cycle stay a single chunk.
+func blinkChunks(delay int) []int {
+	if delay <= blinkCycle {
+		return []int{delay}
+	}
+	n := (delay + blinkCycle - 1) / blinkCycle
+	if n > maxBlinkPhases {
+		n = maxBlinkPhases
+	}
+	out := make([]int, n)
+	base := delay / n
+	for i := range out {
+		out[i] = base
+	}
+	out[n-1] += delay - base*n // remainder to last chunk
+	return out
+}
+
 // Render converts a recording to an animated GIF.
 // Transparency is preserved by default: theme background "transparent"
 // (the default) yields transparent GIF pixels. Pass pageBG (any CSS color:
@@ -138,14 +169,17 @@ func Render(rec recording.File, outPath string, qualityOverride int, step int, p
 	}
 
 	term := NewTerminal(cols, rows)
-	type frame struct {
-		img   *image.RGBA
-		delay int
+	type pending struct {
+		snap      [][]Cell
+		x, y      int
+		cursorVis bool
+		delay     int
 	}
-	var frames []frame
+	var pend []pending
 	stepsCounter := 0
 	total := len(rec.Records)
 	fmt.Fprintf(os.Stderr, "termrec: rendering %d records (step %d)...\n", total, step)
+	kept := 0
 	for i, r := range rec.Records {
 		term.Feed(r.Content)
 		if stepsCounter != 0 {
@@ -154,20 +188,38 @@ func Render(rec recording.File, outPath string, qualityOverride int, step int, p
 		}
 		stepsCounter = (stepsCounter + 1) % step
 		snap := term.Snapshot()
-		// DrawFrame composes at 2x + downscales (smooth) and applies the
-		// watermark frame-relative (CSS: prepended to .terminalizer-frame).
-		img := DrawFrame(snap, term.CurX, term.CurY, term.CursorVisible, cfg)
-		if pageBG != "" {
-			var err error
-			if img, err = flattenOnto(img, pageBG); err != nil {
-				return "", err
-			}
-		}
 		// delay = next frame's delay (ref/render.js:237), % len for last frame
 		nextDelay := rec.Records[(i+1)%len(rec.Records)].Delay
-		frames = append(frames, frame{img: img, delay: int(nextDelay)})
-		if len(frames) == 1 || len(frames)%25 == 0 {
-			fmt.Fprintf(os.Stderr, "termrec: rendered frame %d (record %d/%d)...\n", len(frames), i+1, total)
+		pend = append(pend, pending{snap, term.CurX, term.CurY, term.CursorVisible, int(nextDelay)})
+		kept++
+		if kept == 1 || kept%25 == 0 {
+			fmt.Fprintf(os.Stderr, "termrec: kept frame %d (record %d/%d)...\n", kept, i+1, total)
+		}
+	}
+	type frame struct {
+		img   *image.RGBA
+		delay int
+	}
+	var frames []frame
+	for _, p := range pend {
+		// Idle blink expansion: hidden phases only when the terminal
+		// cursor itself is visible (?25h state); hidden cursors keep one
+		// frame per record exactly as before.
+		chunks := []int{p.delay}
+		if p.cursorVis {
+			chunks = blinkChunks(p.delay)
+		}
+		for j, d := range chunks {
+			// DrawFrame composes at 2x + downscales (smooth) and applies the
+			// watermark frame-relative (CSS: prepended to .terminalizer-frame).
+			img := DrawFrame(p.snap, p.x, p.y, p.cursorVis && j%2 == 0, cfg)
+			if pageBG != "" {
+				var err error
+				if img, err = flattenOnto(img, pageBG); err != nil {
+					return "", err
+				}
+			}
+			frames = append(frames, frame{img: img, delay: d})
 		}
 	}
 	if len(frames) == 0 {
