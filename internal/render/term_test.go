@@ -234,6 +234,27 @@ func TestFrameGeometryCSS(t *testing.T) {
 	}
 }
 
+// Scale factors: frameScale is exact at the 12px anchor; titleScale damps
+// titlebar content so it stays under the terminal type.
+func TestFrameScaleFactors(t *testing.T) {
+	c12 := testConfig("null", nil)
+	c12.FontSize = 12
+	if got := frameScale(c12); got != 1 {
+		t.Fatalf("frameScale(12) = %v want 1", got)
+	}
+	c20 := testConfig("null", nil)
+	c20.FontSize = 20
+	if got := frameScale(c20); got < 1.66 || got > 1.67 {
+		t.Fatalf("frameScale(20) = %v want ~1.667", got)
+	}
+	if got := titleScale(1); got != 1 {
+		t.Fatalf("titleScale(1) = %v want 1", got)
+	}
+	if got := titleScale(5.0 / 3); got < 1.19 || got > 1.21 {
+		t.Fatalf("titleScale(5/3) = %v want ~1.2", got)
+	}
+}
+
 // Transparent by default: default theme bg is "transparent", so a fresh
 // floating render must contain transparent pixels and the GIF must flag them.
 func TestTransparentDefault(t *testing.T) {

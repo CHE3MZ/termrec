@@ -79,12 +79,17 @@ func diff(a, b uint8) int {
 	return d
 }
 
-// composite renders decoded frames viewer-style (Over, in order, disposal:
-// keep), reproducing what a GIF viewer shows for frame i.
+// composite renders decoded frames viewer-style (Over, in order), honoring
+// per-frame disposal: disposal 2 restores the frame rect to background
+// (transparent) before the next frame paints.
 func composite(g *gif.GIF, through int) *image.RGBA {
 	comp := image.NewRGBA(image.Rect(0, 0, g.Config.Width, g.Config.Height))
-	for _, pm := range g.Image[:through+1] {
+	for k := 0; k <= through; k++ {
+		pm := g.Image[k]
 		draw.Draw(comp, pm.Bounds(), pm, pm.Bounds().Min, draw.Over)
+		if k < through && k < len(g.Disposal) && g.Disposal[k] == 2 {
+			draw.Draw(comp, pm.Bounds(), &image.Uniform{color.Transparent}, image.Point{}, draw.Src)
+		}
 	}
 	return comp
 }
@@ -258,6 +263,59 @@ func TestGIFColorConsistency(t *testing.T) {
 	c := comp.RGBAAt(W-3, H-3)
 	if diff(c.R, 0x23) > 4 || diff(c.G, 0x26) > 4 || diff(c.B, 0x28) > 4 {
 		t.Fatalf("bg #%02x%02x%02x want #232628", c.R, c.G, c.B)
+	}
+}
+
+// Transparent animations must never leave ghost trails: composite every
+// prefix viewer-style and compare against a fresh full render of that
+// state. Old cursor blocks lingering on transparent canvas show up as
+// opaque-vs-transparent flips; antialias shimmer never flips alpha, so
+// any double-digit flip count is a real ghost (regression: dirty-rect
+// crops on transparency froze a cursor on every line).
+func TestTransparentNoGhosts(t *testing.T) {
+	title := "T"
+	cfg := fixtureConfig("null", &title) // default theme bg transparent
+	cfg.FrameBox.Style = map[string]string{"margin": "0px"}
+	rec := recording.File{Config: cfg, Records: []recording.Record{
+		{Delay: 200, Content: "ab\r\n"},
+		{Delay: 200, Content: "cd\r\n"},
+		{Delay: 200, Content: "ef\r\n"},
+		{Delay: 200, Content: "gh\r\n"},
+	}}
+	path := filepath.Join(t.TempDir(), "ghost.gif")
+	if _, err := render.Render(rec, path, 100, 1, "", false); err != nil {
+		t.Fatal(err)
+	}
+	g := decodeGIF(t, path)
+	if len(g.Image) != 4 {
+		t.Fatalf("frames=%d want 4", len(g.Image))
+	}
+	// transparent animations restore to background after every frame
+	for i, d := range g.Disposal {
+		if d != 2 {
+			t.Fatalf("frame %d disposal=%d want 2 (transparent)", i, d)
+		}
+	}
+	term := render.NewTerminal(20, 5)
+	for i, r := range rec.Records {
+		term.Feed(r.Content)
+		want := render.DrawFrame(term.Snapshot(), term.CurX, term.CurY, true, cfg)
+		comp := composite(g, i)
+		if !comp.Bounds().Eq(want.Bounds()) {
+			t.Fatalf("frame %d composite bounds %v != %v", i, comp.Bounds(), want.Bounds())
+		}
+		flips := 0
+		for p := 0; p < len(comp.Pix); p += 4 {
+			a, b := comp.Pix[p+3], want.Pix[p+3]
+			if (a < 128) != (b < 128) {
+				flips++
+			}
+		}
+		// Calibrated: dithered text edges shimmer a few alpha flips
+		// (~18 here); a real ghost is a full cursor block (~230).
+		if flips >= 40 {
+			t.Fatalf("frame %d: %d alpha flips (ghost trail)", i, flips)
+		}
 	}
 }
 

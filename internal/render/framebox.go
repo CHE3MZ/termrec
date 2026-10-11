@@ -19,9 +19,14 @@ import (
 // ref default 12px type: radius 6px; window titlebar 22px #E8E8E8; floating
 // titlebar 34px; solid title margin 15px; body padding window 10px /
 // floating+solid 20px; margin 18px; shadow 0 0 18px; frame/body bg #1D1D1D.
-// Frame chrome scales with fontSize via frameScale (12px renders exactly
-// like ref; larger type grows dots, bars, pads, radius, margin and shadow
-// with it), while 1px hairlines (borders, dividers, dot rings) stay 1px.
+// Frame chrome scales with fontSize in two curves, both anchored at the
+// ref default 12px (12px output is ref-exact): structural sizes (pads,
+// margin, corners, shadow, bar layout) follow frameScale, while titlebar
+// content (title text, bar heights, baselines) follows the damped
+// titleScale so titles stay under the terminal type instead of towering
+// over it. Dots keep their 12px absolute discs, centered in the bar, like
+// macOS traffic lights. 1px hairlines (borders, dividers, dot rings)
+// never scale.
 // Compose happens at renderSS x via the ss parameter; all pixel constants
 // below are multiplied by ss so output stays proportional.
 //
@@ -61,8 +66,9 @@ func shadowGlow(cfg config.Config) int {
 	return sc1(3*shadowSigma1x, sc)
 }
 
-// frameScale keeps frame chrome proportional to the terminal text: 12px
-// (the ref default) yields factor 1, i.e. ref-exact geometry.
+// frameScale keeps structural chrome proportional to the terminal text:
+// pads, margin, corners, shadow and the titlebar grid grow with 12px as
+// the ref-exact anchor. 1px hairlines never scale.
 func frameScale(cfg config.Config) float64 {
 	px := float64(cfg.FontSize)
 	if px <= 0 {
@@ -70,6 +76,11 @@ func frameScale(cfg config.Config) float64 {
 	}
 	return px / 12
 }
+
+// titleScale damps titlebar content growth: titles and bars track the text
+// slower than the grid does, so a 20px terminal doesn't get a toy-like
+// 23px title — at 12px it is exactly 1 (ref-exact like everything else).
+func titleScale(sc float64) float64 { return (7 + 3*sc) / 10 }
 
 // sc1 scales a 1x structural value by the frame factor (rounded).
 func sc1(v float64, sc float64) int { return int(v*sc + 0.5) }
@@ -158,22 +169,23 @@ func framePadTitle(cfg config.Config) (pad, titleH int, title string) {
 	ft := frameType(cfg)
 	title = frameTitle(cfg)
 	sc := frameScale(cfg)
+	ts := titleScale(sc)
 	pad = sc1(floatingPad, sc)
 	switch ft {
 	case "window":
 		pad = sc1(windowPad, sc)
 		if title != "" {
-			titleH = sc1(windowTitleH, sc)
+			titleH = sc1(windowTitleH, ts)
 		}
 	case "floating":
 		pad = sc1(floatingPad, sc)
 		if title != "" {
-			titleH = sc1(floatingTitleH, sc)
+			titleH = sc1(floatingTitleH, ts)
 		}
 	case "solid":
 		pad = sc1(floatingPad, sc)
 		if title != "" {
-			titleH = sc1(solidTitleMargin, sc)*2 + sc1(20, sc)
+			titleH = sc1(2*solidTitleMargin+20, ts)
 		}
 	default:
 		pad = sc1(floatingPad, sc)
@@ -221,6 +233,7 @@ func applyFrameBox(termImg *image.RGBA, cfg config.Config, colors map[string]col
 	ft := frameType(cfg)
 	title := frameTitle(cfg)
 	sc := frameScale(cfg)
+	ts := titleScale(sc)
 	margin := parseMarginPx(cfg) * ss
 
 	if ft == "null" {
@@ -282,16 +295,16 @@ func applyFrameBox(termImg *image.RGBA, cfg config.Config, colors map[string]col
 	case "window":
 		if title != "" {
 			wth := titleH
-			drawWindowTitleBar(card, image.Rect(0, 0, cardW, wth), title, ss, sc)
+			drawWindowTitleBar(card, image.Rect(0, 0, cardW, wth), title, ss, ts)
 			draw.Draw(card, image.Rect(0, wth-1, cardW, wth), &image.Uniform{color.RGBA{0xB1, 0xAE, 0xB1, 0xff}}, image.Point{}, draw.Src)
 		}
 	case "floating":
 		if title != "" {
-			drawFloatingTitleBar(card, image.Rect(0, 0, cardW, titleH), title, ss, sc)
+			drawFloatingTitleBar(card, image.Rect(0, 0, cardW, titleH), title, ss, ts)
 		}
 	case "solid":
 		if title != "" {
-			drawSolidTitle(card, image.Rect(0, 0, cardW, titleH), title, ss, sc)
+			drawSolidTitle(card, image.Rect(0, 0, cardW, titleH), title, ss, ts)
 		}
 	}
 	// terminal body over card bg
@@ -622,10 +635,12 @@ func gaussianBlurAlpha(src *image.Alpha, sigma int) *image.Alpha {
 	return out
 }
 
-// --- titlebars (CSS-exact at 12px, proportional above); all rects already
-// scaled, ss scales sub-elements, sc scales the 1x chrome values ---
+// --- titlebars (CSS-exact at 12px); rects arrive scaled, ss scales
+// sub-elements, ts scales titlebar content (font, bars, baselines).
+// Dots stay at their 12px absolute size at any font size — like macOS
+// traffic lights — centered in the (grown) bar. ---
 
-func drawWindowTitleBar(dst *image.RGBA, r image.Rectangle, title string, ss int, sc float64) {
+func drawWindowTitleBar(dst *image.RGBA, r image.Rectangle, title string, ss int, ts float64) {
 	if ss <= 0 {
 		ss = 1
 	}
@@ -638,50 +653,48 @@ func drawWindowTitleBar(dst *image.RGBA, r image.Rectangle, title string, ss int
 		{color.RGBA{0xFF, 0xBD, 0x4C, 0xff}, color.RGBA{0xE0, 0x9E, 0x3E, 0xff}},
 		{color.RGBA{0x00, 0xCA, 0x56, 0xff}, color.RGBA{0x14, 0xAE, 0x46, 0xff}},
 	}
-	// Dots sit 3px below the CSS top:3.5px center (9.5): eyeballed lower
-	// against real renders, the strict CSS value reads too high.
-	rad := sc1(6, sc)
-	cy := r.Min.Y + int((9.5+3)*sc*float64(ss)+0.5)
+	// Centered in the bar, keeping the old sub-pixel eyeball below center.
+	cy := r.Min.Y + r.Dy()/2 + ss/2
 	for i, d := range dots {
-		cx := r.Min.X + sc1(8, sc)*ss + sc1(6, sc)*ss + i*(sc1(12, sc)*ss+sc1(4, sc)*ss)
-		fillCircleBorder(dst, cx, cy, rad*ss, d.fill, d.border)
+		cx := r.Min.X + 8*ss + 6*ss + i*(12*ss+4*ss)
+		fillCircleBorder(dst, cx, cy, 6*ss, d.fill, d.border)
 	}
-	face := titleFacePx(14 * sc * float64(ss))
+	face := titleFacePx(14 * ts * float64(ss))
 	tw := font.MeasureString(face, title).Ceil()
 	tx := r.Min.X + (r.Dx()-tw)/2
-	d := &font.Drawer{Dst: dst, Src: &image.Uniform{color.RGBA{0x3B, 0x42, 0x47, 0xff}}, Face: face, Dot: fixed.P(tx, r.Min.Y+sc1(17, sc)*ss)}
+	d := &font.Drawer{Dst: dst, Src: &image.Uniform{color.RGBA{0x3B, 0x42, 0x47, 0xff}}, Face: face, Dot: fixed.P(tx, r.Min.Y+sc1(17, ts)*ss)}
 	d.DrawString(title)
 }
 
-func drawFloatingTitleBar(dst *image.RGBA, r image.Rectangle, title string, ss int, sc float64) {
+func drawFloatingTitleBar(dst *image.RGBA, r image.Rectangle, title string, ss int, ts float64) {
 	if ss <= 0 {
 		ss = 1
 	}
 	dots := []color.RGBA{
 		{0xFF, 0x5C, 0x5C, 0xff}, {0xFF, 0xBD, 0x4C, 0xff}, {0x00, 0xCA, 0x56, 0xff},
 	}
-	// CSS: 15px dots, buttons left 13px top 9px -> centers (20.5, 16.5).
-	rad := int(7.5*sc*float64(ss) + 0.5)
-	cy := r.Min.Y + int(16.5*sc*float64(ss)+0.5)
+	// CSS: 15px dots, buttons left 13px top 9px; centered like window dots.
+	rad := int(7.5*float64(ss) + 0.5)
+	cy := r.Min.Y + r.Dy()/2 - ss/2
 	for i, c := range dots {
-		cx := r.Min.X + int(20.5*sc*float64(ss)+0.5) + i*(sc1(15, sc)*ss+sc1(4, sc)*ss)
+		cx := r.Min.X + int(20.5*float64(ss)+0.5) + i*(15*ss+4*ss)
 		fillCircle(dst, cx, cy, rad, c)
 	}
-	face := titleFacePx(14 * sc * float64(ss))
+	face := titleFacePx(14 * ts * float64(ss))
 	tw := font.MeasureString(face, title).Ceil()
 	tx := r.Min.X + (r.Dx()-tw)/2
-	d := &font.Drawer{Dst: dst, Src: &image.Uniform{color.RGBA{0xff, 0xff, 0xff, 0xff}}, Face: face, Dot: fixed.P(tx, r.Min.Y+sc1(22, sc)*ss)}
+	d := &font.Drawer{Dst: dst, Src: &image.Uniform{color.RGBA{0xff, 0xff, 0xff, 0xff}}, Face: face, Dot: fixed.P(tx, r.Min.Y+sc1(22, ts)*ss)}
 	d.DrawString(title)
 }
 
-func drawSolidTitle(dst *image.RGBA, r image.Rectangle, title string, ss int, sc float64) {
+func drawSolidTitle(dst *image.RGBA, r image.Rectangle, title string, ss int, ts float64) {
 	if ss <= 0 {
 		ss = 1
 	}
-	face := titleFacePx(14 * sc * float64(ss))
+	face := titleFacePx(14 * ts * float64(ss))
 	tw := font.MeasureString(face, title).Ceil()
 	tx := r.Min.X + (r.Dx()-tw)/2
-	d := &font.Drawer{Dst: dst, Src: &image.Uniform{color.RGBA{0xff, 0xff, 0xff, 0xff}}, Face: face, Dot: fixed.P(tx, r.Min.Y+sc1(solidTitleMargin, sc)*ss+sc1(14, sc)*ss)}
+	d := &font.Drawer{Dst: dst, Src: &image.Uniform{color.RGBA{0xff, 0xff, 0xff, 0xff}}, Face: face, Dot: fixed.P(tx, r.Min.Y+sc1(solidTitleMargin+14, ts)*ss)}
 	d.DrawString(title)
 }
 

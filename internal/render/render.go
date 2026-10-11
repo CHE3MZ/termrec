@@ -353,22 +353,33 @@ func Render(rec recording.File, outPath string, qualityOverride int, step int, p
 
 	// Identical-frame excision + dirty rectangles (t-rec's idle dedup and
 	// ImageMagick's -layers Optimize, reimplemented for stdlib image/gif):
-	// a frame pixel-equal to the previous merges its delay into it, and
-	// changed frames encode only their dirty bbox over the shared palette.
+	// a frame pixel-equal to the previous merges its delay into it.
+	// Cropping applies to fully-opaque animations only: there every crop
+	// pixel replaces exactly. Transparent frames encode full, with disposal
+	// 2 (restore to background) so each frame stands alone over a blank
+	// canvas: a crop pixel fading to transparent cannot erase the canvas
+	// beneath it (1-bit alpha has no erase op), which froze ghost cursors
+	// on every line. Opaque frames keep disposal 1 (leave in place).
 	type eframe struct {
 		img   *image.RGBA
 		delay int
 		rect  image.Rectangle
 	}
+	full := make([]*image.RGBA, len(frames))
+	for i, fr := range frames {
+		full[i] = fr.img
+	}
+	transparent := anyTransparency(full)
 	var efs []eframe
 	for _, fr := range frames {
 		if len(efs) > 0 {
-			if r, ok := diffRect(efs[len(efs)-1].img, fr.img); ok {
-				efs = append(efs, eframe{fr.img, fr.delay, r})
-			} else {
+			if r, ok := diffRect(efs[len(efs)-1].img, fr.img); !ok {
 				efs[len(efs)-1].delay += fr.delay
+				continue
+			} else if !transparent {
+				efs = append(efs, eframe{fr.img, fr.delay, r})
+				continue
 			}
-			continue
 		}
 		efs = append(efs, eframe{fr.img, fr.delay, fr.img.Bounds()})
 	}
@@ -381,7 +392,6 @@ func Render(rec recording.File, outPath string, qualityOverride int, step int, p
 	for i, ef := range efs {
 		imgs[i] = ef.img
 	}
-	transparent := anyTransparency(imgs)
 	pal := buildGlobalPalette(imgs, anchorColors(cfg), numColors, transparent)
 	for _, ef := range efs {
 		d10 := int(ef.delay / 10)
@@ -394,8 +404,13 @@ func Render(rec recording.File, outPath string, qualityOverride int, step int, p
 		pm := ditherFSRect(ef.img, ef.rect, pal, transparent)
 		out.Image = append(out.Image, pm)
 		out.Delay = append(out.Delay, d10)
-		// Full snapshots: leave previous in place (matches terminal frames).
-		out.Disposal = append(out.Disposal, 1)
+		// Transparent frames restore to background after display (each
+		// frame repaints full over blank); opaque frames stay in place.
+		if transparent {
+			out.Disposal = append(out.Disposal, 2)
+		} else {
+			out.Disposal = append(out.Disposal, 1)
+		}
 	}
 	if outPath == "" {
 		outPath = config.ResolveFilePath("render", "gif")

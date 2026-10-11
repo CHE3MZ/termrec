@@ -6,8 +6,8 @@
   embedded Go Mono; Eager Naturalist covered by system + mechanics tests.
 - Render: default fontSize raised from 12 to 20, letterSpacing from 0
   to -1 (clearer, slightly tighter type everywhere).
-- Render: frame chrome (dots, titlebars, title text, pads, radius, margin,
-  shadow) scales with `fontSize` (12px stays ref-exact); hairlines stay 1px.
+- Render: two-curve chrome scaling (structure follows `fontSize`, titles
+  and bars damped, dots stay 12px like macOS); 12px output stays ref-exact.
 - Tests: black-box fixture/render suite moved to `tests/`; unit tests stay
   next to the code they cover.
 - Fixtures: typed `hyperfine` benchmark demo (progress-bar frames, unicode
@@ -20,7 +20,9 @@
   transparent and cursor stays #c7c7c7 (not in the source scheme).
 - Render: `--start-pause/--end-pause` hold edge frames (also `startPause`/
   `endPause` config keys, 5min cap); last frame holds its own delay.
-- Render: dirty-rect frame encoding + identical-frame delay merge (small GIFs).
+- Render: dirty-rect frame encoding on opaque animations, identical-frame
+  delay merge everywhere; transparent animations encode full frames with
+  disposal 2 so no ghost trails survive (cursor no longer freezes on lines).
 - Render: default output `render.gif`, `render_1.gif`, … on collision.
 - Render: `-b` accepts a wallpaper image (PNG/JPEG, 60px padding); watermark
   images gain JPEG support too.
