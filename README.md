@@ -89,5 +89,6 @@ task test           # go test ./...
 task render-sample  # smoke render testdata/demo.yml
 task render-micro   # complex editor demo testdata/micro.yml
 task render-hyperfine  # typed benchmark demo testdata/hyperfine.yml
+task render-eager  # system-font showcase testdata/eager.yml (Eager Naturalist)
 task render-check   # all fixtures + step/quality variants + whitebg variants
 ```

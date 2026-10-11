@@ -47,6 +47,11 @@ tasks:
     cmds:
       - sh scripts/render-hyperfine.sh
 
+  render-eager:
+    desc: System-font showcase testdata/eager.yml -> dist/eager.gif
+    cmds:
+      - sh scripts/render-eager.sh
+
   render-check:
     desc: Render all fixtures + variants with verification
     cmds:

@@ -6,6 +6,7 @@
   embedded Go Mono; Eager Naturalist covered by system + mechanics tests.
 - Fixtures: typed `hyperfine` benchmark demo (progress-bar frames, unicode
   stats) + `render-hyperfine` task.
+- Fixtures: typed `eager` system-font showcase + `render-eager` task.
 - Fonts: Windows registry display-name lookup (cryptic stems like
   eager__.ttf resolve); missing families warn once instead of silently
   falling back.

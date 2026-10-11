@@ -158,3 +158,19 @@ func TestEagerNaturalistLookupMechanics(t *testing.T) {
 		t.Fatalf("resolved planted font produced no face")
 	}
 }
+
+// The render path must pick up the system face too: primaryFace with the
+// Eager Naturalist family resolves to the installed font, so GIFs drawn
+// from such a config actually use it (skips where it isn't installed).
+func TestEagerNaturalistRenderPath(t *testing.T) {
+	if _, err := findSystemFont("Eager Naturalist"); err != nil {
+		t.Skipf("eager naturalist not installed: %v", err)
+	}
+	cfg := testConfig("null", nil)
+	cfg.FontFamily = "Eager Naturalist, Monospace"
+	sys := monoFaceFor("Eager Naturalist", 24)
+	got := primaryFace(cfg, 24)
+	if font.MeasureString(got, "Eager") != font.MeasureString(sys, "Eager") {
+		t.Fatalf("render path did not pick up the system face")
+	}
+}
