@@ -34,7 +34,7 @@ func TestNoOpaqueHaloOutsideCard(t *testing.T) {
 		m := parseMarginPx(cfg)
 		glow := 0
 		if shadowEnabled(cfg) {
-			glow = shadowGlow()
+			glow = shadowGlow(cfg)
 		}
 		ox, oy := m+glow, m+glow
 		semi := 0
@@ -87,7 +87,7 @@ func TestFarFieldCleanInGIF(t *testing.T) {
 	cardW := 20*cw + pad*2
 	cardH := 5*ch + pad*2 + titleH
 	m := parseMarginPx(cfg)
-	ox, oy := m+shadowGlow(), m+shadowGlow()
+	ox, oy := m+shadowGlow(cfg), m+shadowGlow(cfg)
 	const clear = 14
 	for fi, pm := range g.Image {
 		W, H := pm.Bounds().Dx(), pm.Bounds().Dy()

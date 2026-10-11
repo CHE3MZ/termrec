@@ -6,6 +6,8 @@
   embedded Go Mono; Eager Naturalist covered by system + mechanics tests.
 - Render: default fontSize raised from 12 to 20, letterSpacing from 0
   to -1 (clearer, slightly tighter type everywhere).
+- Render: frame chrome (dots, titlebars, title text, pads, radius, margin,
+  shadow) scales with `fontSize` (12px stays ref-exact); hairlines stay 1px.
 - Tests: black-box fixture/render suite moved to `tests/`; unit tests stay
   next to the code they cover.
 - Fixtures: typed `hyperfine` benchmark demo (progress-bar frames, unicode

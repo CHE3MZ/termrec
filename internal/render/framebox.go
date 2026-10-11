@@ -15,10 +15,13 @@ import (
 	"golang.org/x/image/math/fixed"
 )
 
-// CSS-exact values from terminalizer-player (see ref docs), in 1x px:
-// radius 6px; window titlebar 22px #E8E8E8; floating titlebar 34px;
-// solid title margin 15px; body padding window 10px / floating+solid 20px;
-// margin 18px; shadow 0 0 18px; frame/body bg #1D1D1D.
+// CSS-exact values from terminalizer-player (see ref docs), in 1x px at the
+// ref default 12px type: radius 6px; window titlebar 22px #E8E8E8; floating
+// titlebar 34px; solid title margin 15px; body padding window 10px /
+// floating+solid 20px; margin 18px; shadow 0 0 18px; frame/body bg #1D1D1D.
+// Frame chrome scales with fontSize via frameScale (12px renders exactly
+// like ref; larger type grows dots, bars, pads, radius, margin and shadow
+// with it), while 1px hairlines (borders, dividers, dot rings) stay 1px.
 // Compose happens at renderSS x via the ss parameter; all pixel constants
 // below are multiplied by ss so output stays proportional.
 //
@@ -51,8 +54,25 @@ const (
 	solidTitleMargin = 15
 )
 
-// shadowGlow returns the 1x glow extent beyond the card (3 sigma covers it).
-func shadowGlow() int { return 3 * shadowSigma1x }
+// shadowGlow returns the 1x glow extent beyond the card (3 sigma covers it),
+// scaled with the frame factor like all structural chrome.
+func shadowGlow(cfg config.Config) int {
+	sc := frameScale(cfg)
+	return sc1(3*shadowSigma1x, sc)
+}
+
+// frameScale keeps frame chrome proportional to the terminal text: 12px
+// (the ref default) yields factor 1, i.e. ref-exact geometry.
+func frameScale(cfg config.Config) float64 {
+	px := float64(cfg.FontSize)
+	if px <= 0 {
+		px = 12
+	}
+	return px / 12
+}
+
+// sc1 scales a 1x structural value by the frame factor (rounded).
+func sc1(v float64, sc float64) int { return int(v*sc + 0.5) }
 
 func frameType(cfg config.Config) string {
 	if cfg.FrameBox.Type == nil {
@@ -87,8 +107,9 @@ func styleHas(cfg config.Config, key, val string) bool {
 
 func parseMarginPx(cfg config.Config) int {
 	m := strings.TrimSpace(styleGet(cfg, "margin"))
+	sc := frameScale(cfg)
 	if m == "" {
-		return frameMargin
+		return sc1(frameMargin, sc)
 	}
 	low := strings.ToLower(m)
 	if low == "0" || low == "0px" || strings.HasPrefix(low, "0 ") {
@@ -103,13 +124,13 @@ func parseMarginPx(cfg config.Config) int {
 		}
 	}
 	if digits == "" {
-		return frameMargin
+		return sc1(frameMargin, sc)
 	}
 	n, err := strconv.Atoi(digits)
 	if err != nil {
-		return frameMargin
+		return sc1(frameMargin, sc)
 	}
-	return n
+	return sc1(float64(n), sc)
 }
 
 func shadowEnabled(cfg config.Config) bool {
@@ -136,31 +157,32 @@ func frameBG(cfg config.Config, colors map[string]color.RGBA) color.RGBA {
 func framePadTitle(cfg config.Config) (pad, titleH int, title string) {
 	ft := frameType(cfg)
 	title = frameTitle(cfg)
-	pad = floatingPad
+	sc := frameScale(cfg)
+	pad = sc1(floatingPad, sc)
 	switch ft {
 	case "window":
-		pad = windowPad
+		pad = sc1(windowPad, sc)
 		if title != "" {
-			titleH = windowTitleH
+			titleH = sc1(windowTitleH, sc)
 		}
 	case "floating":
-		pad = floatingPad
+		pad = sc1(floatingPad, sc)
 		if title != "" {
-			titleH = floatingTitleH
+			titleH = sc1(floatingTitleH, sc)
 		}
 	case "solid":
-		pad = floatingPad
+		pad = sc1(floatingPad, sc)
 		if title != "" {
-			titleH = solidTitleMargin*2 + 20
+			titleH = sc1(solidTitleMargin, sc)*2 + sc1(20, sc)
 		}
 	default:
-		pad = floatingPad
+		pad = sc1(floatingPad, sc)
 		titleH = 0
 		title = ""
 	}
 	if v := styleGet(cfg, "padding"); strings.TrimSpace(v) != "" {
 		if n, err := strconv.Atoi(strings.TrimSuffix(strings.TrimSpace(strings.ToLower(v)), "px")); err == nil && n >= 0 {
-			pad = n
+			pad = sc1(float64(n), sc)
 		}
 	}
 	return pad, titleH, title
@@ -170,6 +192,7 @@ func framePadTitle(cfg config.Config) (pad, titleH int, title string) {
 // innerW x innerH. DrawFrame downscales the supersampled compose to this.
 func frameOuterSize(cfg config.Config, innerW, innerH int) image.Rectangle {
 	ft := frameType(cfg)
+	sc := frameScale(cfg)
 	margin := parseMarginPx(cfg)
 	if ft == "null" {
 		return image.Rect(0, 0, innerW+margin*2, innerH+margin*2)
@@ -180,8 +203,8 @@ func frameOuterSize(cfg config.Config, innerW, innerH int) image.Rectangle {
 	W := cardW + margin*2
 	H := cardH + margin*2
 	if shadowEnabled(cfg) {
-		W += shadowGlow() * 2
-		H += shadowGlow()*2 + shadowOffsetY
+		W += shadowGlow(cfg) * 2
+		H += shadowGlow(cfg)*2 + sc1(shadowOffsetY, sc)
 	}
 	return image.Rect(0, 0, W, H)
 }
@@ -197,6 +220,7 @@ func applyFrameBox(termImg *image.RGBA, cfg config.Config, colors map[string]col
 	}
 	ft := frameType(cfg)
 	title := frameTitle(cfg)
+	sc := frameScale(cfg)
 	margin := parseMarginPx(cfg) * ss
 
 	if ft == "null" {
@@ -257,17 +281,17 @@ func applyFrameBox(termImg *image.RGBA, cfg config.Config, colors map[string]col
 	switch ft {
 	case "window":
 		if title != "" {
-			wth := windowTitleH * ss
-			drawWindowTitleBar(card, image.Rect(0, 0, cardW, wth), title, ss)
+			wth := titleH
+			drawWindowTitleBar(card, image.Rect(0, 0, cardW, wth), title, ss, sc)
 			draw.Draw(card, image.Rect(0, wth-1, cardW, wth), &image.Uniform{color.RGBA{0xB1, 0xAE, 0xB1, 0xff}}, image.Point{}, draw.Src)
 		}
 	case "floating":
 		if title != "" {
-			drawFloatingTitleBar(card, image.Rect(0, 0, cardW, floatingTitleH*ss), title, ss)
+			drawFloatingTitleBar(card, image.Rect(0, 0, cardW, titleH), title, ss, sc)
 		}
 	case "solid":
 		if title != "" {
-			drawSolidTitle(card, image.Rect(0, 0, cardW, titleH), title, ss)
+			drawSolidTitle(card, image.Rect(0, 0, cardW, titleH), title, ss, sc)
 		}
 	}
 	// terminal body over card bg
@@ -283,7 +307,7 @@ func applyFrameBox(termImg *image.RGBA, cfg config.Config, colors map[string]col
 	}
 
 	// rounded corners -> transparent (2px AA ramp at compose scale)
-	radius := frameRadius * ss
+	radius := sc1(frameRadius, sc) * ss
 	if v := styleGet(cfg, "borderRadius"); strings.TrimSpace(v) != "" {
 		low := strings.ToLower(strings.TrimSpace(v))
 		if low == "0" || low == "0px" || low == "none" {
@@ -303,8 +327,12 @@ func applyFrameBox(termImg *image.RGBA, cfg config.Config, colors map[string]col
 	// 2. Composite onto transparent canvas with margin + soft gaussian glow.
 	// Glow spread covers 3 sigma so the falloff is never clipped; the glow
 	// is dropped shadowOffsetY below center (y = y + offset).
-	glow := 3 * shadowSigma1x * ss
-	dy := shadowOffsetY * ss
+	glow := shadowGlow(cfg) * ss
+	sigma := glow / 3
+	if sigma < 1 {
+		sigma = 1
+	}
+	dy := sc1(shadowOffsetY, sc) * ss
 	W := cardW + margin*2
 	H := cardH + margin*2
 	if shadowEnabled(cfg) {
@@ -318,7 +346,7 @@ func applyFrameBox(termImg *image.RGBA, cfg config.Config, colors map[string]col
 		ox += glow
 		oy2 += glow
 		draw.Draw(out, image.Rect(ox-glow, oy2-glow+dy, ox+cardW+glow, oy2+cardH+glow+dy),
-			shadowLayer(cardW, cardH, radius, shadowSigma1x*ss), image.Point{}, draw.Over)
+			shadowLayer(cardW, cardH, radius, sigma), image.Point{}, draw.Over)
 	}
 	draw.Draw(out, image.Rect(ox, oy2, ox+cardW, oy2+cardH), card, image.Point{}, draw.Over)
 	return out
@@ -594,9 +622,10 @@ func gaussianBlurAlpha(src *image.Alpha, sigma int) *image.Alpha {
 	return out
 }
 
-// --- titlebars (CSS-exact); all rects already scaled, ss scales sub-elements ---
+// --- titlebars (CSS-exact at 12px, proportional above); all rects already
+// scaled, ss scales sub-elements, sc scales the 1x chrome values ---
 
-func drawWindowTitleBar(dst *image.RGBA, r image.Rectangle, title string, ss int) {
+func drawWindowTitleBar(dst *image.RGBA, r image.Rectangle, title string, ss int, sc float64) {
 	if ss <= 0 {
 		ss = 1
 	}
@@ -611,19 +640,20 @@ func drawWindowTitleBar(dst *image.RGBA, r image.Rectangle, title string, ss int
 	}
 	// Dots sit 3px below the CSS top:3.5px center (9.5): eyeballed lower
 	// against real renders, the strict CSS value reads too high.
-	cy := r.Min.Y + int((9.5+3)*float64(ss)+0.5)
+	rad := sc1(6, sc)
+	cy := r.Min.Y + int((9.5+3)*sc*float64(ss)+0.5)
 	for i, d := range dots {
-		cx := r.Min.X + 8*ss + 6*ss + i*(12*ss+4*ss)
-		fillCircleBorder(dst, cx, cy, 6*ss, d.fill, d.border)
+		cx := r.Min.X + sc1(8, sc)*ss + sc1(6, sc)*ss + i*(sc1(12, sc)*ss+sc1(4, sc)*ss)
+		fillCircleBorder(dst, cx, cy, rad*ss, d.fill, d.border)
 	}
-	face := titleFacePx(14 * float64(ss))
+	face := titleFacePx(14 * sc * float64(ss))
 	tw := font.MeasureString(face, title).Ceil()
 	tx := r.Min.X + (r.Dx()-tw)/2
-	d := &font.Drawer{Dst: dst, Src: &image.Uniform{color.RGBA{0x3B, 0x42, 0x47, 0xff}}, Face: face, Dot: fixed.P(tx, r.Min.Y+17*ss)}
+	d := &font.Drawer{Dst: dst, Src: &image.Uniform{color.RGBA{0x3B, 0x42, 0x47, 0xff}}, Face: face, Dot: fixed.P(tx, r.Min.Y+sc1(17, sc)*ss)}
 	d.DrawString(title)
 }
 
-func drawFloatingTitleBar(dst *image.RGBA, r image.Rectangle, title string, ss int) {
+func drawFloatingTitleBar(dst *image.RGBA, r image.Rectangle, title string, ss int, sc float64) {
 	if ss <= 0 {
 		ss = 1
 	}
@@ -631,27 +661,27 @@ func drawFloatingTitleBar(dst *image.RGBA, r image.Rectangle, title string, ss i
 		{0xFF, 0x5C, 0x5C, 0xff}, {0xFF, 0xBD, 0x4C, 0xff}, {0x00, 0xCA, 0x56, 0xff},
 	}
 	// CSS: 15px dots, buttons left 13px top 9px -> centers (20.5, 16.5).
-	rad := int(7.5*float64(ss) + 0.5)
-	cy := r.Min.Y + int(16.5*float64(ss)+0.5)
+	rad := int(7.5*sc*float64(ss) + 0.5)
+	cy := r.Min.Y + int(16.5*sc*float64(ss)+0.5)
 	for i, c := range dots {
-		cx := r.Min.X + int(20.5*float64(ss)+0.5) + i*(15*ss+4*ss)
+		cx := r.Min.X + int(20.5*sc*float64(ss)+0.5) + i*(sc1(15, sc)*ss+sc1(4, sc)*ss)
 		fillCircle(dst, cx, cy, rad, c)
 	}
-	face := titleFacePx(14 * float64(ss))
+	face := titleFacePx(14 * sc * float64(ss))
 	tw := font.MeasureString(face, title).Ceil()
 	tx := r.Min.X + (r.Dx()-tw)/2
-	d := &font.Drawer{Dst: dst, Src: &image.Uniform{color.RGBA{0xff, 0xff, 0xff, 0xff}}, Face: face, Dot: fixed.P(tx, r.Min.Y+22*ss)}
+	d := &font.Drawer{Dst: dst, Src: &image.Uniform{color.RGBA{0xff, 0xff, 0xff, 0xff}}, Face: face, Dot: fixed.P(tx, r.Min.Y+sc1(22, sc)*ss)}
 	d.DrawString(title)
 }
 
-func drawSolidTitle(dst *image.RGBA, r image.Rectangle, title string, ss int) {
+func drawSolidTitle(dst *image.RGBA, r image.Rectangle, title string, ss int, sc float64) {
 	if ss <= 0 {
 		ss = 1
 	}
-	face := titleFacePx(14 * float64(ss))
+	face := titleFacePx(14 * sc * float64(ss))
 	tw := font.MeasureString(face, title).Ceil()
 	tx := r.Min.X + (r.Dx()-tw)/2
-	d := &font.Drawer{Dst: dst, Src: &image.Uniform{color.RGBA{0xff, 0xff, 0xff, 0xff}}, Face: face, Dot: fixed.P(tx, r.Min.Y+solidTitleMargin*ss+14*ss)}
+	d := &font.Drawer{Dst: dst, Src: &image.Uniform{color.RGBA{0xff, 0xff, 0xff, 0xff}}, Face: face, Dot: fixed.P(tx, r.Min.Y+sc1(solidTitleMargin, sc)*ss+sc1(14, sc)*ss)}
 	d.DrawString(title)
 }
 

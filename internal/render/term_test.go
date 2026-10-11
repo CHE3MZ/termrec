@@ -193,17 +193,21 @@ func TestFrameSizes(t *testing.T) {
 	}
 }
 
-// CSS-exact geometry: window titlebar 22px content + 1px top highlight +
-// 1px bottom border (24 total) + body pad 10; floating 34 + 20.
+// CSS-exact geometry at 12px: window titlebar 22px content + 1px top
+// highlight + 1px bottom border (24 total) + body pad 10; floating 34 + 20.
+// Chrome scales with fontSize, so bigger type must render strictly larger.
 func TestFrameGeometryCSS(t *testing.T) {
 	title := "T"
 	term := NewTerminal(20, 5)
 	term.Feed("hi")
 	snap := term.Snapshot()
-	cw, ch := cellSize(testConfig("null", nil))
+	null12 := testConfig("null", nil)
+	null12.FontSize = 12
+	cw, ch := cellSize(null12)
 	termW, termH := 20*cw, 5*ch
 
 	wcfg := testConfig("window", &title)
+	wcfg.FontSize = 12
 	wimg := DrawFrame(snap, term.CurX, term.CurY, true, wcfg)
 	// card = term + 2*10 pad, +24 title; outer = card + 2*18 margin + 2*21 glow + 2 shadow drop
 	wantW := termW + 20 + 36 + 42
@@ -213,11 +217,20 @@ func TestFrameGeometryCSS(t *testing.T) {
 	}
 
 	fcfg := testConfig("floating", &title)
+	fcfg.FontSize = 12
 	fimg := DrawFrame(snap, term.CurX, term.CurY, true, fcfg)
 	wantW = termW + 40 + 36 + 42
 	wantH = termH + 40 + 34 + 36 + 42 + 2
 	if fimg.Bounds().Dx() != wantW || fimg.Bounds().Dy() != wantH {
 		t.Fatalf("floating geometry: got %dx%d want %dx%d", fimg.Bounds().Dx(), fimg.Bounds().Dy(), wantW, wantH)
+	}
+
+	// proportional chrome: 20px type must outgrow the 12px frame
+	big := testConfig("window", &title)
+	big.FontSize = 20
+	bimg := DrawFrame(snap, term.CurX, term.CurY, true, big)
+	if bimg.Bounds().Dx() <= wimg.Bounds().Dx() || bimg.Bounds().Dy() <= wimg.Bounds().Dy() {
+		t.Fatalf("scaled chrome must grow: 12px %v vs 20px %v", wimg.Bounds(), bimg.Bounds())
 	}
 }
 
