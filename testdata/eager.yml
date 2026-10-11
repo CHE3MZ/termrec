@@ -28,7 +28,7 @@ config:
   cursorStyle: block
   fontFamily: "Eager Naturalist, Monospace"
   fontFile: null
-  fontSize: 16
+  fontSize: 20
   lineHeight: 1
   letterSpacing: -2
   theme:

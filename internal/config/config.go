@@ -206,13 +206,13 @@ fontFamily: "Monaco, Lucida Console, Ubuntu Mono, Monospace"
 fontFile: null
 
 # The size of the font in px (bigger = larger, clearer GIFs)
-fontSize: 16
+fontSize: 20
 
 # The height of lines
 lineHeight: 1
 
-# The spacing between letters
-letterSpacing: 0
+# The spacing between letters (negative tightens tracking a touch)
+letterSpacing: -1
 
 # Theme: Dark (Visual Studio) palette; background stays transparent so GIFs
 # render transparent by default (set an opaque color for a solid terminal).

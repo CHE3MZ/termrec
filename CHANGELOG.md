@@ -4,9 +4,10 @@
 - Fonts: new `fontFile` config key for explicit .ttf/.otf paths (wins over
   fontFamily, warns and falls back when unreadable); default face stays
   embedded Go Mono; Eager Naturalist covered by system + mechanics tests.
-- Render: default `fontSize` 12 → 16 (larger, clearer GIFs).
-- Config: `letterSpacing` accepts negatives to tighten tracking (used by the
-  eager showcase: proportional faces in a fixed grid).
+- Render: default fontSize raised from 12 to 20, letterSpacing from 0
+  to -1 (clearer, slightly tighter type everywhere).
+- Tests: black-box fixture/render suite moved to `tests/`; unit tests stay
+  next to the code they cover.
 - Fixtures: typed `hyperfine` benchmark demo (progress-bar frames, unicode
   stats) + `render-hyperfine` task.
 - Fixtures: typed `eager` system-font showcase + `render-eager` task.

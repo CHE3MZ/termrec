@@ -85,7 +85,7 @@ Approximations (custom engine, no browser):
 ```sh
 task build          # build dist/termrec
 task lint           # bugcheck + seccheck (same scripts CI runs)
-task test           # go test ./...
+task test           # go test ./... (unit tests in-package, integration in tests/)
 task render-sample  # smoke render testdata/demo.yml
 task render-micro   # complex editor demo testdata/micro.yml
 task render-hyperfine  # typed benchmark demo testdata/hyperfine.yml
