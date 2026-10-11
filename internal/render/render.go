@@ -99,34 +99,39 @@ func repeatToLoopCount(r int) int {
 	return r
 }
 
-// blinkCycle is the idle cursor blink granularity in ms: 500 on, 500 off,
-// like xterm's default. Frames pausing longer than one cycle split into
-// alternating visible/hidden phases, so the cursor blinks during idles
-// instead of sitting as a still blob. Active typing (short delays) stays a
-// single visible frame: typing never strobes.
-const blinkCycle = 500
+// blinkGrace is how long the cursor stays solid before the first toggle:
+// new content lands, the eye settles, and only then does it blink. Without
+// this the cursor visibly flashes the instant a line appears.
+// blinkCycle sizes the off/on phases after the grace; blinkMinTail absorbs
+// small remainders so no phase is ever a quick strobe blip.
+const blinkGrace = 700
+const blinkCycle = 600
+const blinkMinTail = 350
 
 // maxBlinkPhases caps the split so one huge uncapped pause (maxIdleTime:
 // auto) can't explode into hundreds of near-identical frames. The last
 // phase absorbs the remainder, so total duration is always exact.
 const maxBlinkPhases = 8
 
-// blinkChunks splits delay into alternating on/off phase durations,
-// starting visible. Delays within one cycle stay a single chunk.
+// blinkChunks splits delay into a solid-on grace plus alternating off/on
+// phases. Pauses under ~1s stay a single steady frame: typing never
+// strobes and fresh lines never flash.
 func blinkChunks(delay int) []int {
-	if delay <= blinkCycle {
+	if delay <= blinkGrace+blinkMinTail {
 		return []int{delay}
 	}
-	n := (delay + blinkCycle - 1) / blinkCycle
-	if n > maxBlinkPhases {
-		n = maxBlinkPhases
+	rest := delay - blinkGrace
+	n := (rest + blinkCycle - 1) / blinkCycle
+	if n > maxBlinkPhases-1 {
+		n = maxBlinkPhases - 1
 	}
-	out := make([]int, n)
-	base := delay / n
-	for i := range out {
-		out[i] = base
+	out := make([]int, 0, n+1)
+	out = append(out, blinkGrace)
+	base := rest / n
+	for i := 0; i < n; i++ {
+		out = append(out, base)
 	}
-	out[n-1] += delay - base*n // remainder to last chunk
+	out[len(out)-1] += rest - base*n // remainder to last chunk
 	return out
 }
 

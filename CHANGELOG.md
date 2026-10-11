@@ -13,9 +13,8 @@
 - Text: per-rune font fallback chain (family, Go Mono, Go Regular, basicfont).
 - Fixtures: shell-prompt records (`$ ` open/close, cursor starts line 1) and calmer delays.
 - Fixtures: prompt `$` in white, not magenta.
-- Render: idle cursor blink — pauses over 500ms split into alternating
-  visible/hidden 500ms phases (capped at 8); hidden cursors and fast typing
-  stay single-frame.
+- Render: idle cursor blink — 700ms solid grace, then ~600ms off/on phases
+  (capped at 8, pauses under ~1s stay single); hidden cursors never split.
 - Watermark kept (opt-in, off by default); skips and ignored style keys warn once to stderr.
 - Docs: README documents flags and known differences from terminalizer.
 

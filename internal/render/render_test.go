@@ -128,8 +128,8 @@ func TestRenderRepeatMapping(t *testing.T) {
 	}
 }
 
-// Idle blink chunking: short pauses stay single, long pauses split into
-// ~500ms alternating phases, huge pauses cap out, totals stay exact.
+// Idle blink chunking: a solid 700ms grace, then ~600ms off/on phases.
+// Pauses under ~1s stay single; huge pauses cap out; totals stay exact.
 func TestBlinkChunks(t *testing.T) {
 	cases := []struct {
 		delay int
@@ -137,10 +137,11 @@ func TestBlinkChunks(t *testing.T) {
 	}{
 		{100, []int{100}},
 		{500, []int{500}},
-		{600, []int{300, 300}},
-		{800, []int{400, 400}},
-		{1200, []int{400, 400, 400}},
-		{2000, []int{500, 500, 500, 500}},
+		{800, []int{800}},
+		{1050, []int{1050}},
+		{1200, []int{700, 500}},
+		{1500, []int{700, 400, 400}},
+		{2000, []int{700, 433, 433, 434}},
 	}
 	for _, tc := range cases {
 		got := blinkChunks(tc.delay)
@@ -171,8 +172,8 @@ func TestBlinkChunks(t *testing.T) {
 	}
 }
 
-// An idle pause must render alternating cursor on/off frames with the same
-// total duration; a hidden cursor (?25l) must not split at all.
+// An idle pause must render grace + alternating cursor off/on frames with
+// the same total duration; a hidden cursor (?25l) must not split at all.
 func TestBlinkRender(t *testing.T) {
 	mkrec := func(hide bool) recording.File {
 		title := "T"
@@ -186,21 +187,21 @@ func TestBlinkRender(t *testing.T) {
 			{Delay: 1200, Content: "yo\r\n"},
 		}}
 	}
-	// frame 1 shows for next delay 1200 -> 3 phases (400 on/off/on);
+	// frame 1 shows for next delay 1200 -> grace 700 + off 500;
 	// frame 2 shows for next delay 200 -> single.
 	path := filepath.Join(t.TempDir(), "blink.gif")
 	if _, err := Render(mkrec(false), path, 100, 1, ""); err != nil {
 		t.Fatal(err)
 	}
 	g := decodeGIF(t, path)
-	if len(g.Image) != 4 {
-		t.Fatalf("blink frames=%d want 4", len(g.Image))
+	if len(g.Image) != 3 {
+		t.Fatalf("blink frames=%d want 3", len(g.Image))
 	}
 	sum10 := 0
 	for _, d := range g.Delay {
 		sum10 += d
 	}
-	if sum10 != 140 { // (400+400+400+200)/10
+	if sum10 != 140 { // (700+500+200)/10
 		t.Fatalf("blink total %d00ms want 1400ms", sum10)
 	}
 	// hidden cursor: same recording, no split -> 2 frames

@@ -28,8 +28,9 @@ termrec render demo -b white   # opaque page background instead of transparency
 `-q/--quality 1-100`, `-s/--step` (keep every Nth frame), `-b/--background`
 (any CSS color; empty/`transparent` keeps the transparent default).
 Progress and warnings go to stderr; the final path goes to stdout.
-Pauses longer than 500ms render the cursor blinking (500ms on/off phases,
-capped), so idles feel alive; fast typing stays a single frame per record.
+Pauses longer than ~1s render the cursor blinking (700ms solid grace, then
+~600ms off/on phases, capped), so long idles feel alive; fast typing and
+fresh lines hold a steady cursor and never strobe.
 
 `config.yml` stays compatible with terminalizer recordings: old `.yml`
 files `play` and `render` as-is.
