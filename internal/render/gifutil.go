@@ -165,7 +165,15 @@ func (q *quantCache) nearest(r, g, b int) int {
 // diffusion entirely (no error in or out), so large flat fills stay
 // bit-exact instead of speckling with neighbor tones.
 func ditherFS(src *image.RGBA, pal color.Palette, transparent bool) *image.Paletted {
-	b := src.Bounds()
+	return ditherFSRect(src, src.Bounds(), pal, transparent)
+}
+
+// ditherFSRect quantizes only r (a dirty bbox of src) with the same
+// Stucki diffusion, flat-lock, and transparency rules. The output keeps
+// r's offset so stdlib image/gif writes it as a positioned sub-frame;
+// diffusion at the rect edge simply has no outside neighbors.
+func ditherFSRect(src *image.RGBA, r image.Rectangle, pal color.Palette, transparent bool) *image.Paletted {
+	b := r
 	W, H := b.Dx(), b.Dy()
 	dst := image.NewPaletted(b, pal)
 	// exact palette lookup for the flat-lock (opaque entries only)

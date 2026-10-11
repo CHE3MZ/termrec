@@ -3,10 +3,18 @@
 ## Unreleased
 - Theme: default palette is now Dark (Visual Studio); background stays
   transparent and cursor stays #c7c7c7 (not in the source scheme).
+- Render: `--start-pause/--end-pause` hold edge frames (also `startPause`/
+  `endPause` config keys, 5min cap); last frame holds its own delay.
+- Render: dirty-rect frame encoding + identical-frame delay merge (small GIFs).
+- Render: default output `render.gif`, `render_1.gif`, … on collision.
+- Render: `-b` accepts a wallpaper image (PNG/JPEG, 60px padding); watermark
+  images gain JPEG support too.
+- Record: 350ms shell settle, F2 PNG snapshots, `-q/--quiet`; render `--quiet`.
+- Record/render print frame counts, durations, and sizes.
 - Render: window traffic-light dots sit 3px below the CSS center (eyeballed).
 - Render: shadow glow shifted 2px down (drop-shadow look on any background).
 - Render: `-b/--background` flag to flatten onto an opaque page color.
-- Render: progress lines to stderr; unique default output `render<epoch>.gif`.
+- Render: progress lines to stderr; collision-free default output names.
 - Fix: `repeat: -1` now plays once (was LoopCount 1 = twice).
 - Terminal: double-width CJK/emoji runes occupy two cells (xterm-like wrap).
 - Terminal: SGR blink (5/6, shown steady) and strikethrough (9/29, drawn).

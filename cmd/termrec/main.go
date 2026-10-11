@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"time"
+	"strings"
 
 	"github.com/CHE3MZ/termrec/internal/config"
 	"github.com/CHE3MZ/termrec/internal/play"
@@ -126,12 +126,15 @@ func cmdConfig(args []string) {
 
 func cmdRecord(args []string) {
 	if hasHelp(args) {
-		fmt.Fprintln(os.Stderr, "Usage: termrec record <recordingFile> [-c config.yml] [-d command]")
+		fmt.Fprintln(os.Stderr, "Usage: termrec record <recordingFile> [-c config.yml] [-d command] [-q]")
 		fmt.Fprintln(os.Stderr, "  -c, --config   Overwrite the default configurations")
 		fmt.Fprintln(os.Stderr, "  -d, --command  The command to be executed")
+		fmt.Fprintln(os.Stderr, "  -q, --quiet    Suppress informational output (F2 snapshots still saved)")
+		fmt.Fprintln(os.Stderr, "During the session, press F2 to save a PNG snapshot next to the recording.")
 		return
 	}
 	var cfgFile, command string
+	var quiet bool
 	var positional []string
 	for i := 0; i < len(args); i++ {
 		a := args[i]
@@ -155,6 +158,8 @@ func cmdRecord(args []string) {
 				val = args[i]
 			}
 			command = val
+		case "-q", "--quiet":
+			quiet = true
 		default:
 			if len(a) > 0 && a[0] == '-' {
 				hintAndExit(fmt.Errorf("unknown flag %q for record", a))
@@ -178,7 +183,7 @@ func cmdRecord(args []string) {
 			hintAndExit(err)
 		}
 	}
-	if _, err := record.Run(cfg, positional[0], command); err != nil {
+	if _, err := record.Run(cfg, positional[0], command, quiet); err != nil {
 		hintAndExit(err)
 	}
 }
@@ -231,15 +236,21 @@ func cmdPlay(args []string) {
 
 func cmdRender(args []string) {
 	if hasHelp(args) {
-		fmt.Fprintln(os.Stderr, "Usage: termrec render <recordingFile> [-o out.gif] [-q quality] [-s step] [-b background]")
-		fmt.Fprintln(os.Stderr, "  -o, --output   Output file")
+		fmt.Fprintln(os.Stderr, "Usage: termrec render <recordingFile> [-o out.gif] [-q quality] [-s step] [-b background] [--start-pause 2s] [--end-pause 500ms] [--quiet]")
+		fmt.Fprintln(os.Stderr, "  -o, --output   Output file (default render.gif, render_1.gif, ... on collision)")
 		fmt.Fprintln(os.Stderr, "  -q, --quality  Quality 1-100")
 		fmt.Fprintln(os.Stderr, "  -s, --step     Step to reduce frames (default 1)")
-		fmt.Fprintln(os.Stderr, "  -b, --background  Page background color (CSS color, default transparent)")
+		fmt.Fprintln(os.Stderr, "  -b, --background  Page background: CSS color (default transparent) or image file (wallpaper)")
+		fmt.Fprintln(os.Stderr, "  --start-pause   Hold first frame (e.g. 2s, 500ms, max 5min)")
+		fmt.Fprintln(os.Stderr, "  --end-pause     Hold last frame (same format)")
+		fmt.Fprintln(os.Stderr, "  --quiet        Suppress progress output")
 		return
 	}
 	var out string
 	var pageBG string
+	var startPause, endPause int
+	var startSet, endSet bool
+	var quiet bool
 	quality := 0
 	step := 1
 	var positional []string
@@ -291,6 +302,34 @@ func cmdRender(args []string) {
 				val = args[i]
 			}
 			pageBG = val
+		case "--start-pause":
+			if !hasVal {
+				i++
+				if i >= len(args) {
+					hintAndExit(fmt.Errorf("flag %s needs a value", name))
+				}
+				val = args[i]
+			}
+			n, err := parsePauseMS(val)
+			if err != nil {
+				hintAndExit(fmt.Errorf("bad start-pause %q: %v", val, err))
+			}
+			startPause, startSet = n, true
+		case "--end-pause":
+			if !hasVal {
+				i++
+				if i >= len(args) {
+					hintAndExit(fmt.Errorf("flag %s needs a value", name))
+				}
+				val = args[i]
+			}
+			n, err := parsePauseMS(val)
+			if err != nil {
+				hintAndExit(fmt.Errorf("bad end-pause %q: %v", val, err))
+			}
+			endPause, endSet = n, true
+		case "--quiet":
+			quiet = true
 		default:
 			if len(a) > 0 && a[0] == '-' {
 				hintAndExit(fmt.Errorf("unknown flag %q for render", a))
@@ -305,19 +344,72 @@ func cmdRender(args []string) {
 	if err != nil {
 		hintAndExit(err)
 	}
+	if startSet {
+		rec.Config.StartPause = startPause
+	}
+	if endSet {
+		rec.Config.EndPause = endPause
+	}
 	outPath := out
 	if outPath != "" {
 		outPath = config.ResolveFilePath(outPath, "gif")
 	} else {
-		// Unique default like ref ('render'+Date.now()): never silently
-		// overwrite a previous render.
-		outPath = config.ResolveFilePath(fmt.Sprintf("render%d", time.Now().UnixMilli()), "gif")
+		// t-rec style collision-free default: render.gif, render_1.gif, ...
+		outPath = nextFreePath(config.ResolveFilePath("render", "gif"))
 	}
-	final, err := render.Render(rec, outPath, quality, step, pageBG)
+	final, err := render.Render(rec, outPath, quality, step, pageBG, quiet)
 	if err != nil {
 		hintAndExit(err)
 	}
 	fmt.Println("\nSuccessfully Rendered")
 	fmt.Println("The animated GIF image is saved into the file:")
 	fmt.Println(final)
+}
+
+// maxPauseMS caps start/end hold pauses (t-rec caps pauses at 5min).
+const maxPauseMS = 300000
+
+// parsePauseMS parses a hold pause like "2s", "500ms", or plain "1500" (ms).
+func parsePauseMS(s string) (int, error) {
+	t := strings.TrimSpace(strings.ToLower(s))
+	if t == "" {
+		return 0, fmt.Errorf("empty pause")
+	}
+	mult := 1
+	switch {
+	case strings.HasSuffix(t, "ms"):
+		t = strings.TrimSuffix(t, "ms")
+	case strings.HasSuffix(t, "s"):
+		t = strings.TrimSuffix(t, "s")
+		mult = 1000
+	case strings.HasSuffix(t, "m"):
+		t = strings.TrimSuffix(t, "m")
+		mult = 60000
+	}
+	// NOTE: check "ms" before "s" above; plain numbers are milliseconds.
+	n, err := strconv.Atoi(strings.TrimSpace(t))
+	if err != nil || n < 0 {
+		return 0, fmt.Errorf("want like 2s, 500ms, or 1500 (ms)")
+	}
+	if ms := n * mult; ms <= maxPauseMS {
+		return ms, nil
+	}
+	return 0, fmt.Errorf("max pause is 5min")
+}
+
+// nextFreePath returns path itself when free, else base_1.ext, base_2.ext...
+// (t-rec's collision-free output naming).
+func nextFreePath(path string) string {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return path
+	}
+	ext := filepath.Ext(path)
+	base := strings.TrimSuffix(path, ext)
+	for i := 1; i < 100000; i++ {
+		cand := fmt.Sprintf("%s_%d%s", base, i, ext)
+		if _, err := os.Stat(cand); os.IsNotExist(err) {
+			return cand
+		}
+	}
+	return path
 }

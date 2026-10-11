@@ -107,6 +107,8 @@ type Config struct {
 	Quality       int               `yaml:"quality"`
 	FrameDelay    AutoFloat         `yaml:"frameDelay"`
 	MaxIdleTime   AutoFloat         `yaml:"maxIdleTime"`
+	StartPause    int               `yaml:"startPause"`
+	EndPause      int               `yaml:"endPause"`
 	FrameBox      FrameBox          `yaml:"frameBox"`
 	Watermark     Watermark         `yaml:"watermark"`
 	CursorStyle   string            `yaml:"cursorStyle"`
@@ -160,6 +162,11 @@ frameDelay: auto
 # Ignored if the frameDelay is not set to auto
 # Set to auto to prevent limiting the max idle time
 maxIdleTime: 2000
+
+# Hold the first/last GIF frame in ms: breathing room for demos
+# (t-rec start-pause/end-pause parity; CLI flags override these)
+startPause: 0
+endPause: 0
 
 # The surrounding frame box
 # The type can be null, window, floating, or solid

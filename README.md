@@ -18,19 +18,24 @@ Requires Go >= 1.26.
 ```sh
 termrec init
 termrec config
-termrec record demo -c config.yml -d "powershell.exe"
+termrec record demo -c config.yml -d "powershell.exe"   # F2 saves a PNG snapshot mid-session
 termrec play demo -r -s 1.5
 termrec render demo -o demo.gif -q 90 -s 2
-termrec render demo -b white   # opaque page background instead of transparency
+termrec render demo -b white                             # opaque page background instead of transparency
+termrec render demo -b wallpaper.png --start-pause 1s --end-pause 2s
 ```
 
-`render` flags: `-o/--output` (default `render<epoch>.gif`, never overwrites),
-`-q/--quality 1-100`, `-s/--step` (keep every Nth frame), `-b/--background`
-(any CSS color; empty/`transparent` keeps the transparent default).
+`render` flags: `-o/--output` (default `render.gif`, `render_1.gif`, … on
+collision; explicit `-o` overwrites), `-q/--quality 1-100`, `-s/--step`
+(keep every Nth frame), `-b/--background` (CSS color, `transparent`, or an
+image file used as wallpaper with 60px padding — PNG/JPEG, must cover the
+page), `--start-pause/--end-pause` (hold edge frames, e.g. `2s`, `500ms`,
+max 5min; also `startPause/endPause` config keys), `--quiet`.
 Progress and warnings go to stderr; the final path goes to stdout.
 Pauses longer than ~1s render the cursor blinking (700ms solid grace, then
 ~600ms off/on phases, capped), so long idles feel alive; fast typing and
 fresh lines hold a steady cursor and never strobe.
+The last frame holds its own delay (no wrap to the first record).
 
 `config.yml` stays compatible with terminalizer recordings: old `.yml`
 files `play` and `render` as-is.
@@ -42,7 +47,7 @@ Deliberate (privacy / headless design):
 - No `share`, `generate`, upload, token, or network calls of any kind.
 - No `record` share prompt (and no `-k/--skip-sharing` flag).
 - GIFs are transparent by default; use `-b white` for the classic opaque look.
-- Watermark: local PNG files only. Remote URLs, `data:` URLs, and missing /
+- Watermark: local PNG/JPEG files only. Remote URLs, `data:` URLs, and missing /
   undecodable files render without a watermark plus a once-only stderr
   warning. Only `width/height/left/right/top/bottom/opacity` style keys are
   honored (`position` is accepted as-is); anything else warns and is ignored.
@@ -65,6 +70,9 @@ Approximations (custom engine, no browser):
   border, boxShadow: none, borderRadius`; other arbitrary CSS keys are ignored.
 - GIF `quality` maps to palette size (256/128/64/32) + diffusion instead of
   the encoder's 1-100 scaler; flat theme colors stay bit-exact via anchors.
+  Unchanged frames encode as dirty rectangles over the shared palette and
+  pixel-identical frames merge (t-rec idle-dedup/`-layers Optimize` parity),
+  so typing demos stay small.
 - Frame delays clamp to a 20ms minimum (viewers ignore 0/1); `repeat: -1`
   plays once, `0` loops forever, `n` loops n times.
 

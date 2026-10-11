@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"image/draw"
+	_ "image/jpeg"
 	_ "image/png"
 	"os"
 	"strconv"
@@ -32,7 +33,7 @@ func warnOnce(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "termrec: warn: %s\n", msg)
 }
 
-// applyWatermark overlays a local PNG onto base (frame-relative, CSS absolute).
+// applyWatermark overlays a local image (PNG/JPEG) onto base (frame-relative, CSS absolute).
 // Remote URLs are ignored (privacy). Supports right/bottom (default 15px),
 // top/left overrides, width/height scaling, opacity.
 // Style px values are final-output px; ss scales them to the compose scale.
@@ -64,7 +65,7 @@ func applyWatermark(base *image.RGBA, cfg config.Config, ss int) *image.RGBA {
 	defer f.Close()
 	src, _, err := image.Decode(f)
 	if err != nil {
-		warnOnce("watermark %q ignored: not a decodable PNG (%v)", p, err)
+		warnOnce("watermark %q ignored: not a decodable image (%v)", p, err)
 		return base
 	}
 	warnUnknownWatermarkStyle(cfg.Watermark.Style)
