@@ -77,7 +77,7 @@ func TestFarFieldCleanInGIF(t *testing.T) {
 		{Delay: 200, Content: "yo\r\n"},
 	}}
 	path := filepath.Join(t.TempDir(), "far.gif")
-	out, err := Render(rec, path, 100, 1, "")
+	out, err := Render(rec, path, 100, 1, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
