@@ -49,9 +49,13 @@ config:
     brightCyan: "#b1c6ca"
     brightWhite: "#f9f9f4"
 records:
-  - delay: 200
-    content: "hello termrec\r\n"
-  - delay: 300
-    content: "\x1b[32mgreen line\x1b[0m\r\n"
   - delay: 500
+    content: "\x1b[35m$\x1b[0m "
+  - delay: 500
+    content: "hello termrec\r\n"
+  - delay: 600
+    content: "\x1b[32mgreen line\x1b[0m\r\n"
+  - delay: 800
     content: "done\r\n"
+  - delay: 800
+    content: "\x1b[35m$\x1b[0m "
