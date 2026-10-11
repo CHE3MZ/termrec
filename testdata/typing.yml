@@ -25,7 +25,7 @@ config:
       width: 100px
       opacity: "0.9"
   cursorStyle: block
-  fontFamily: "Geist Mono, Monaco, Lucida Console, Ubuntu Mono, Monospace"
+  fontFamily: Monaco, Monospace
   fontFile: null
   fontSize: 12
   lineHeight: 1

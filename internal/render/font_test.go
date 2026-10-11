@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/CHE3MZ/termrec/assets/fonts"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/gofont/gomono"
 	"golang.org/x/image/font/opentype"
@@ -55,11 +54,11 @@ func TestCellMetricsVaryBySize(t *testing.T) {
 	}
 }
 
-// Unknown families (no generic in list) must fall back to embedded Geist
-// Mono Medium even on machines with system mono fonts installed
-// (regression: the generic fallback list used to swallow every lookup).
-func TestUnknownFamilyFallsBackToGeist(t *testing.T) {
-	gm, err := opentype.Parse(fonts.GeistMonoMedium)
+// Unknown families (no generic in list) must fall back to embedded Go Mono
+// even on machines with system mono fonts installed (regression: the generic
+// fallback list used to swallow every lookup).
+func TestUnknownFamilyFallsBackToGoMono(t *testing.T) {
+	gm, err := opentype.Parse(gomono.TTF)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,15 +68,15 @@ func TestUnknownFamilyFallsBackToGeist(t *testing.T) {
 	}
 	got := monoFaceFor("Definitely Not A Font ZZZ", 48)
 	if font.MeasureString(got, "M") != font.MeasureString(want, "M") {
-		t.Fatalf("unknown family did not fall back to Geist Mono Medium")
+		t.Fatalf("unknown family did not fall back to Go Mono")
 	}
 	if _, err := findSystemFont("Definitely Not A Font ZZZ"); err == nil {
 		t.Fatalf("unknown family should not resolve")
 	}
 }
 
-// Per-rune fallback: latin stays on the primary face, CJK (absent from
-// Geist Mono) falls through to a later chain face instead of drawing tofu.
+// Per-rune fallback: latin stays on the primary face, CJK (absent from Go
+// Mono) falls through to a later chain face instead of drawing tofu.
 func TestFaceForRuneFallback(t *testing.T) {
 	cfg := testConfig("null", nil)
 	cfg.FontFamily = ""
@@ -87,7 +86,7 @@ func TestFaceForRuneFallback(t *testing.T) {
 		t.Fatalf("latin must resolve to primary face")
 	}
 	if got := faceForRune(chain, '中'); got == primary {
-		t.Fatalf("CJK must fall past Geist Mono (no CJK coverage)")
+		t.Fatalf("CJK must fall past Go Mono (no CJK coverage)")
 	}
 	if faceForRune(nil, 'A') == nil {
 		t.Fatalf("empty chain must yield last-resort face, not nil")
@@ -121,5 +120,41 @@ func TestFontFileOverride(t *testing.T) {
 	fam := monoFaceFor("Definitely Not A Font ZZZ", 24)
 	if got := primaryFace(cfg, 24); font.MeasureString(got, "M") != font.MeasureString(fam, "M") {
 		t.Fatalf("missing fontFile must fall back to fontFamily")
+	}
+}
+
+// Eager Naturalist on the real system: resolves by family name when the
+// font is installed, and skips gracefully on machines without it (CI
+// included) instead of failing the suite.
+func TestEagerNaturalistSystem(t *testing.T) {
+	ft, err := findSystemFont("Eager Naturalist")
+	if err != nil || ft == nil {
+		t.Skipf("eager naturalist not installed: %v", err)
+	}
+	face := monoFaceFor("Eager Naturalist", 12)
+	if face == nil {
+		t.Fatalf("resolved font produced no face")
+	}
+	if font.MeasureString(face, "M") <= 0 {
+		t.Fatalf("resolved face has no advance")
+	}
+}
+
+// Eager Naturalist lookup mechanics: a planted EagerNaturalist-Regular.ttf
+// resolves through the same normalize + prefix path a real install takes,
+// so the name is proven usable once the file exists on the system.
+func TestEagerNaturalistLookupMechanics(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "EagerNaturalist-Regular.ttf"), gomono.TTF, 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TERMREC_FONT_DIRS", dir)
+	ft, err := findSystemFont("Eager Naturalist")
+	if err != nil || ft == nil {
+		t.Fatalf("planted eager naturalist must resolve: %v", err)
+	}
+	face := monoFaceFor("Eager Naturalist", 12)
+	if face == nil {
+		t.Fatalf("resolved planted font produced no face")
 	}
 }

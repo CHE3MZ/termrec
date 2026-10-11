@@ -1,8 +1,9 @@
 # Changelog
 
 ## Unreleased
-- Fonts: default face is embedded Geist Mono Medium (`assets/fonts` keeps
-  only that weight); new `fontFile` config key for explicit .ttf/.otf paths.
+- Fonts: new `fontFile` config key for explicit .ttf/.otf paths (wins over
+  fontFamily, warns and falls back when unreadable); default face stays
+  embedded Go Mono; Eager Naturalist covered by system + mechanics tests.
 - Fixtures: typed `hyperfine` benchmark demo + `render-hyperfine` task.
 - Theme: default palette is now Dark (Visual Studio); background stays
   transparent and cursor stays #c7c7c7 (not in the source scheme).
@@ -21,8 +22,8 @@
 - Fix: `repeat: -1` now plays once (was LoopCount 1 = twice).
 - Terminal: double-width CJK/emoji runes occupy two cells (xterm-like wrap).
 - Terminal: SGR blink (5/6, shown steady) and strikethrough (9/29, drawn).
-- Text: per-rune font fallback chain (primary, Geist Mono, Go Mono, Go
-  Regular, basicfont).
+- Text: per-rune font fallback chain (primary, Go Mono, Go Regular,
+  basicfont).
 - Fixtures: shell-prompt records (`$ ` open/close, cursor starts line 1) and calmer delays.
 - Fixtures: prompt `$` in white, not magenta.
 - Fixtures: new `micro` demo (full-screen editor session: syntax colors,

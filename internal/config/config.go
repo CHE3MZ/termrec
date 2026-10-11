@@ -195,12 +195,11 @@ watermark:
 cursorStyle: block
 
 # Font family
-# First installed match wins (system font folders are scanned); anything
-# missing falls back per-rune through embedded Geist Mono Medium, so
-# rendering works headless with zero system fonts.
+# Hint list only; termrec uses an embedded monospace fallback
+# so rendering works headless with zero system fonts.
 # Single weight only: bold is double-struck, italic is ignored, and the
 # titlebar always uses the embedded sans.
-fontFamily: "Geist Mono, Monaco, Lucida Console, Ubuntu Mono, Monospace"
+fontFamily: "Monaco, Lucida Console, Ubuntu Mono, Monospace"
 
 # Optional absolute path to a .ttf/.otf file: wins over fontFamily above.
 # Use this for files that aren't installed system-wide.
