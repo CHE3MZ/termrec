@@ -1,20 +1,42 @@
 package render
 
 import (
+	"fmt"
 	"image"
 	"image/draw"
 	_ "image/png"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/CHE3MZ/termrec/internal/config"
 )
+
+// warnOnce prints each distinct warning to stderr a single time per process.
+// applyWatermark runs once per frame, so without this every notice would
+// repeat for every frame of the GIF.
+var (
+	warnMu  sync.Mutex
+	warned  = map[string]bool{}
+)
+
+func warnOnce(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	warnMu.Lock()
+	defer warnMu.Unlock()
+	if warned[msg] {
+		return
+	}
+	warned[msg] = true
+	fmt.Fprintf(os.Stderr, "termrec: warn: %s\n", msg)
+}
 
 // applyWatermark overlays a local PNG onto base (frame-relative, CSS absolute).
 // Remote URLs are ignored (privacy). Supports right/bottom (default 15px),
 // top/left overrides, width/height scaling, opacity.
 // Style px values are final-output px; ss scales them to the compose scale.
+// Every skip/ignore prints a once-only stderr warning (this runs per frame).
 func applyWatermark(base *image.RGBA, cfg config.Config, ss int) *image.RGBA {
 	if ss <= 0 {
 		ss = 1
@@ -26,21 +48,26 @@ func applyWatermark(base *image.RGBA, cfg config.Config, ss int) *image.RGBA {
 	low := strings.ToLower(p)
 	if strings.HasPrefix(low, "http://") || strings.HasPrefix(low, "https://") {
 		// privacy: never fetch remote watermark
+		warnOnce("watermark %q ignored: remote URLs are never fetched (local PNG files only)", p)
 		return base
 	}
 	// data: URLs not supported either (keep local-file only)
 	if strings.HasPrefix(low, "data:") {
+		warnOnce("watermark ignored: data: URLs are not supported (local PNG files only)")
 		return base
 	}
 	f, err := os.Open(p)
 	if err != nil {
+		warnOnce("watermark %q ignored: cannot open (%v)", p, err)
 		return base
 	}
 	defer f.Close()
 	src, _, err := image.Decode(f)
 	if err != nil {
+		warnOnce("watermark %q ignored: not a decodable PNG (%v)", p, err)
 		return base
 	}
+	warnUnknownWatermarkStyle(cfg.Watermark.Style)
 	st := cfg.Watermark.Style
 	targetW := parsePx(styleGetLower(st, "width"), 0) * ss
 	targetH := parsePx(styleGetLower(st, "height"), 0) * ss
@@ -93,6 +120,21 @@ func styleGetLower(m map[string]string, key string) string {
 		}
 	}
 	return ""
+}
+
+// warnUnknownWatermarkStyle flags style keys we parse-and-ignore. width,
+// height, left, right, top, bottom and opacity are honored; position is
+// accepted but harmless (we always overlay absolute, like the CSS default).
+// Anything else (ref applies arbitrary CSS via jQuery) is silently dropped
+// without this notice.
+func warnUnknownWatermarkStyle(st map[string]string) {
+	for k := range st {
+		switch strings.ToLower(strings.TrimSpace(k)) {
+		case "width", "height", "left", "right", "top", "bottom", "opacity", "position":
+		default:
+			warnOnce("watermark style %q ignored (honored: width/height/left/right/top/bottom/opacity)", k)
+		}
+	}
 }
 
 func parsePx(s string, def int) int {

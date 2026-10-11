@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/CHE3MZ/termrec/internal/config"
 	"github.com/CHE3MZ/termrec/internal/play"
@@ -308,7 +309,9 @@ func cmdRender(args []string) {
 	if outPath != "" {
 		outPath = config.ResolveFilePath(outPath, "gif")
 	} else {
-		outPath = config.ResolveFilePath("render", "gif")
+		// Unique default like ref ('render'+Date.now()): never silently
+		// overwrite a previous render.
+		outPath = config.ResolveFilePath(fmt.Sprintf("render%d", time.Now().UnixMilli()), "gif")
 	}
 	final, err := render.Render(rec, outPath, quality, step, pageBG)
 	if err != nil {

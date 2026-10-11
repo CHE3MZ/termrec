@@ -87,8 +87,11 @@ func flattenOnto(img *image.RGBA, pageBG string) (*image.RGBA, error) {
 }
 
 func repeatToLoopCount(r int) int {
+	// GIF LoopCount semantics (see image/gif docs): 0 = loop forever,
+	// -1 = show each frame only once, else looped LoopCount+1 times.
+	// ref passes repeat straight to the encoder, so -1 must stay -1.
 	if r == -1 {
-		return 1 // play once (no infinite loop); 0 == infinite in GIF
+		return -1 // play once
 	}
 	if r < -1 {
 		return 0
@@ -141,6 +144,8 @@ func Render(rec recording.File, outPath string, qualityOverride int, step int, p
 	}
 	var frames []frame
 	stepsCounter := 0
+	total := len(rec.Records)
+	fmt.Fprintf(os.Stderr, "termrec: rendering %d records (step %d)...\n", total, step)
 	for i, r := range rec.Records {
 		term.Feed(r.Content)
 		if stepsCounter != 0 {
@@ -161,6 +166,9 @@ func Render(rec recording.File, outPath string, qualityOverride int, step int, p
 		// delay = next frame's delay (ref/render.js:237), % len for last frame
 		nextDelay := rec.Records[(i+1)%len(rec.Records)].Delay
 		frames = append(frames, frame{img: img, delay: int(nextDelay)})
+		if len(frames) == 1 || len(frames)%25 == 0 {
+			fmt.Fprintf(os.Stderr, "termrec: rendered frame %d (record %d/%d)...\n", len(frames), i+1, total)
+		}
 	}
 	if len(frames) == 0 {
 		return "", fmt.Errorf("step filtered out all frames")

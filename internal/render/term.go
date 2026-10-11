@@ -1,6 +1,6 @@
 // Package render converts recordings to animated GIFs without a browser.
 // Pipeline: load .yml -> adjust delays -> emulate terminal grid per record
-// -> draw RGBA (draw.go + framebox.go) -> watermark -> encode GIF (gif.go).
+// -> draw RGBA (draw.go + framebox.go) -> watermark -> encode GIF (gifutil.go).
 package render
 
 import (
@@ -28,7 +28,8 @@ type Cell struct {
 }
 
 // Terminal is an ANSI/SGR emulator covering what xterm 3.x emits for
-// terminalizer recordings: printable text, \n \r \b \t, SGR (incl. 256/truecolor),
+// terminalizer recordings: printable text (incl. double-width CJK/emoji),
+// \n \r \b \t, SGR (incl. 256/truecolor),
 // cursor moves, erase, scroll regions (treated as full), alt-screen (treated as clear),
 // cursor save/restore + visibility.
 type Terminal struct {
@@ -108,12 +109,107 @@ func (t *Terminal) put(ch rune) {
 			t.CurY = t.Rows - 1
 		}
 	}
+	if runeWidth(ch) == 0 {
+		return // combining/zero-width mark: no cell, no advance
+	}
+	if w := runeWidth(ch); w == 2 && t.Cols >= 2 {
+		t.putWide(ch)
+		return
+	}
+	// Overwriting half of a wide char orphans its partner: clear it.
+	// Continuation cells are Ch == 0 (blank cells are ' ', never 0).
+	if t.Grid[t.CurY][t.CurX].Ch == 0 && t.CurX > 0 {
+		t.Grid[t.CurY][t.CurX-1] = blankCell()
+	}
+	if t.CurX+1 < t.Cols && t.Grid[t.CurY][t.CurX+1].Ch == 0 {
+		t.Grid[t.CurY][t.CurX+1] = blankCell()
+	}
 	t.Grid[t.CurY][t.CurX] = Cell{
 		Ch: ch, FG: t.CurFG, BG: t.CurBG,
 		FGCustom: t.CurFGCustom, BGCustom: t.CurBGCustom,
 		Bold: t.CurBold, Dim: t.CurDim, Inverse: t.CurInverse, Underline: t.CurUnderline,
 	}
 	t.CurX++
+}
+
+// putWide places a double-width rune (CJK/emoji) like xterm: the glyph
+// occupies two cells, the second holding a Ch == 0 continuation that draw
+// paths render as blank (bg only). If only one column is left, the rune
+// wraps to the next line first. Cursor lands past both cells.
+func (t *Terminal) putWide(ch rune) {
+	if t.CurX+1 >= t.Cols {
+		t.CurX = 0
+		t.CurY++
+		if t.CurY >= t.Rows {
+			t.scroll()
+			t.CurY = t.Rows - 1
+		}
+	}
+	cell := Cell{
+		Ch: ch, FG: t.CurFG, BG: t.CurBG,
+		FGCustom: t.CurFGCustom, BGCustom: t.CurBGCustom,
+		Bold: t.CurBold, Dim: t.CurDim, Inverse: t.CurInverse, Underline: t.CurUnderline,
+	}
+	t.Grid[t.CurY][t.CurX] = cell
+	cont := cell
+	cont.Ch = 0 // continuation: bg fill only, no glyph
+	t.Grid[t.CurY][t.CurX+1] = cont
+	t.CurX += 2
+}
+
+func blankCell() Cell { return Cell{Ch: ' ', FG: "foreground"} }
+
+// runeWidth returns the terminal cell width of r: 0 for zero-width
+// (combining marks etc., skipped by Feed), 2 for East Asian wide/fullwidth
+// and emoji ranges, 1 otherwise. This is a stdlib-free wcwidth
+// approximation (no CGO/cgo tables); ambiguous-width runes follow the
+// wide emoji reading most modern terminals use.
+func runeWidth(r rune) int {
+	switch {
+	case r < 0x0300:
+		return 1
+	case r <= 0x036F, // combining diacriticals
+		r >= 0x1AB0 && r <= 0x1AFF, // combining diacriticals extended
+		r >= 0x1DC0 && r <= 0x1DFF, // combining diacriticals supplement
+		r >= 0x20D0 && r <= 0x20FF, // combining enclosing marks
+		r >= 0xFE20 && r <= 0xFE2F, // combining half marks
+		r == 0x200B || r == 0x200C || r == 0x200D, // ZWSP/ZWNJ/ZWJ
+		r == 0x2060 || r == 0xFEFF: // word joiner / ZWNBSP
+		return 0
+	}
+	switch {
+	case r >= 0x1100 && r <= 0x115F, // hangul jamo
+		r >= 0x231A && r <= 0x231B,
+		r == 0x2329 || r == 0x232A,
+		r >= 0x23E9 && r <= 0x23EC, r == 0x23F0 || r == 0x23F3,
+		r >= 0x25FD && r <= 0x25FE,
+		r >= 0x2614 && r <= 0x2615, r >= 0x2648 && r <= 0x2653,
+		r == 0x267F || r == 0x2693 || r == 0x26A1,
+		r >= 0x26AA && r <= 0x26AB,
+		r >= 0x26BD && r <= 0x26BE, r >= 0x26C4 && r <= 0x26C5,
+		r == 0x26CE || r == 0x26D4 || r == 0x26EA,
+		r >= 0x26F2 && r <= 0x26F3, r == 0x26F5 || r == 0x26FA || r == 0x26FD,
+		r == 0x2705, r == 0x270A || r == 0x270B,
+		r == 0x2728, r == 0x274C || r == 0x274E,
+		r >= 0x2753 && r <= 0x2755, r == 0x2757,
+		r >= 0x2795 && r <= 0x2797, r == 0x27B0,
+		r == 0x27BF || r == 0x2B1B || r == 0x2B1C,
+		r == 0x2B50 || r == 0x2B55 || r == 0x2C04,
+		r >= 0x2E80 && r <= 0x303E, // CJK radicals / kana marks
+		r >= 0x3041 && r <= 0x33FF, // hiragana/katakana/bopomofo/hangul jamo/CJK enclosed
+		r >= 0x3400 && r <= 0x4DBF, // CJK ext A
+		r >= 0x4E00 && r <= 0x9FFF, // CJK unified
+		r >= 0xA000 && r <= 0xA4CF, // yi
+		r >= 0xAC00 && r <= 0xD7A3, // hangul syllables
+		r >= 0xF900 && r <= 0xFAFF, // CJK compat ideographs
+		r >= 0xFE10 && r <= 0xFE19, r >= 0xFE30 && r <= 0xFE4F,
+		r >= 0xFF00 && r <= 0xFF60, r >= 0xFFE0 && r <= 0xFFE6, // fullwidth
+		r >= 0x20000 && r <= 0x2FFFD, // CJK ext B-F
+		r >= 0x30000 && r <= 0x3FFFD,
+		r >= 0x1F300 && r <= 0x1FAFF: // emoji + symbols
+		return 2
+	}
+	return 1
 }
 
 func (t *Terminal) newline() {

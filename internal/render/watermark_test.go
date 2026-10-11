@@ -53,3 +53,18 @@ func TestWatermarkAllFrameTypes(t *testing.T) {
 		}
 	}
 }
+
+// Unknown style keys must not break the overlay (they warn to stderr once).
+func TestWatermarkUnknownStyleKey(t *testing.T) {
+	wm := filepath.Join(t.TempDir(), "wm.png")
+	writeRedPNG(t, wm)
+	title := "T"
+	cfg := testConfig("floating", &title)
+	cfg.Watermark.ImagePath = &wm
+	cfg.Watermark.Style["zIndex"] = "5"
+	term := NewTerminal(20, 5)
+	term.Feed("hi")
+	if img := DrawFrame(term.Snapshot(), term.CurX, term.CurY, true, cfg); !hasRedPixel(img) {
+		t.Fatalf("watermark with unknown style key must still apply")
+	}
+}

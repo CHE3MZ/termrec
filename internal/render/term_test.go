@@ -19,6 +19,45 @@ func TestSGRColors(t *testing.T) {
 	}
 }
 
+func TestWideRunes(t *testing.T) {
+	if runeWidth('A') != 1 || runeWidth('中') != 2 || runeWidth('😀') != 2 {
+		t.Fatalf("widths: A=%d 中=%d emoji=%d", runeWidth('A'), runeWidth('中'), runeWidth('😀'))
+	}
+	if runeWidth('́') != 0 { // combining acute
+		t.Fatalf("combining width: %d", runeWidth('́'))
+	}
+	term := NewTerminal(6, 2)
+	term.Feed("A中B")
+	if term.Grid[0][0].Ch != 'A' || term.Grid[0][1].Ch != '中' {
+		t.Fatalf("wide place: %+v %+v", term.Grid[0][0], term.Grid[0][1])
+	}
+	if term.Grid[0][2].Ch != 0 {
+		t.Fatalf("continuation cell must be Ch==0, got %+v", term.Grid[0][2])
+	}
+	if term.Grid[0][3].Ch != 'B' || term.CurX != 4 {
+		t.Fatalf("cursor must advance 2 for wide: CurX=%d %+v", term.CurX, term.Grid[0][3])
+	}
+	// wide rune at last column wraps instead of splitting
+	term2 := NewTerminal(4, 2)
+	term2.Feed("ABC中")
+	if term2.Grid[1][0].Ch != '中' || term2.Grid[0][3].Ch != ' ' {
+		t.Fatalf("wide wrap: row0=%q row1=%q", string(term2.Grid[0][3].Ch), string(term2.Grid[1][0].Ch))
+	}
+	// overwriting a wide half clears the orphaned partner
+	term3 := NewTerminal(6, 2)
+	term3.Feed("A中B")
+	term3.Feed("\x1b[1;2HX") // X lands on the wide first half
+	if term3.Grid[0][1].Ch != 'X' || term3.Grid[0][2].Ch != ' ' {
+		t.Fatalf("orphan clear: %+v %+v", term3.Grid[0][1], term3.Grid[0][2])
+	}
+	term4 := NewTerminal(6, 2)
+	term4.Feed("A中B")
+	term4.Feed("\x1b[1;3HY") // Y lands on the continuation cell
+	if term4.Grid[0][2].Ch != 'Y' || term4.Grid[0][1].Ch != ' ' {
+		t.Fatalf("continuation overwrite: %+v %+v", term4.Grid[0][1], term4.Grid[0][2])
+	}
+}
+
 func TestNewlineAndCursor(t *testing.T) {
 	term := NewTerminal(5, 3)
 	term.Feed("AB\r\nCD")

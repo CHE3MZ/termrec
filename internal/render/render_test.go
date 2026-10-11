@@ -102,13 +102,13 @@ func TestRenderQualityVariants(t *testing.T) {
 	}
 }
 
-// Loop count mapping: repeat -1 -> 1, 0 -> 0, n -> n.
+// Loop count mapping: repeat -1 -> -1 (once), 0 -> 0 (forever), n -> n.
 func TestRenderRepeatMapping(t *testing.T) {
 	for _, tc := range []struct {
 		repeat int
 		want   int
 	}{
-		{-1, 1}, {0, 0}, {3, 3},
+		{-1, -1}, {0, 0}, {3, 3},
 	} {
 		if got := repeatToLoopCount(tc.repeat); got != tc.want {
 			t.Fatalf("repeat %d -> %d want %d", tc.repeat, got, tc.want)
