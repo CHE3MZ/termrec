@@ -77,10 +77,15 @@ func frameScale(cfg config.Config) float64 {
 	return px / 12
 }
 
-// titleScale damps titlebar content growth: titles and bars track the text
-// slower than the grid does, so a 20px terminal doesn't get a toy-like
-// 23px title — at 12px it is exactly 1 (ref-exact like everything else).
-func titleScale(sc float64) float64 { return (7 + 3*sc) / 10 }
+// titleScale grows titlebar content between frozen and full: at 20px type
+// the title lands at 19px (just under the em) in a snug bar. 12px yields
+// exactly 1 (ref-exact like everything else).
+func titleScale(sc float64) float64 { return (5 + 5*sc) / 10 }
+
+// dotScale grows discs gently: between the beloved 12px discs and full
+// proportional scaling. At 20px type, window discs land at 14px and
+// floating at 18px — present under the text, never towering over it.
+func dotScale(sc float64) float64 { return 0.75 + 0.25*sc }
 
 // sc1 scales a 1x structural value by the frame factor (rounded).
 func sc1(v float64, sc float64) int { return int(v*sc + 0.5) }
@@ -233,7 +238,6 @@ func applyFrameBox(termImg *image.RGBA, cfg config.Config, colors map[string]col
 	ft := frameType(cfg)
 	title := frameTitle(cfg)
 	sc := frameScale(cfg)
-	ts := titleScale(sc)
 	margin := parseMarginPx(cfg) * ss
 
 	if ft == "null" {
@@ -295,16 +299,16 @@ func applyFrameBox(termImg *image.RGBA, cfg config.Config, colors map[string]col
 	case "window":
 		if title != "" {
 			wth := titleH
-			drawWindowTitleBar(card, image.Rect(0, 0, cardW, wth), title, ss, ts)
+			drawWindowTitleBar(card, image.Rect(0, 0, cardW, wth), title, ss, sc)
 			draw.Draw(card, image.Rect(0, wth-1, cardW, wth), &image.Uniform{color.RGBA{0xB1, 0xAE, 0xB1, 0xff}}, image.Point{}, draw.Src)
 		}
 	case "floating":
 		if title != "" {
-			drawFloatingTitleBar(card, image.Rect(0, 0, cardW, titleH), title, ss, ts)
+			drawFloatingTitleBar(card, image.Rect(0, 0, cardW, titleH), title, ss, sc)
 		}
 	case "solid":
 		if title != "" {
-			drawSolidTitle(card, image.Rect(0, 0, cardW, titleH), title, ss, ts)
+			drawSolidTitle(card, image.Rect(0, 0, cardW, titleH), title, ss, sc)
 		}
 	}
 	// terminal body over card bg
@@ -640,10 +644,11 @@ func gaussianBlurAlpha(src *image.Alpha, sigma int) *image.Alpha {
 // Dots stay at their 12px absolute size at any font size — like macOS
 // traffic lights — centered in the (grown) bar. ---
 
-func drawWindowTitleBar(dst *image.RGBA, r image.Rectangle, title string, ss int, ts float64) {
+func drawWindowTitleBar(dst *image.RGBA, r image.Rectangle, title string, ss int, sc float64) {
 	if ss <= 0 {
 		ss = 1
 	}
+	ts := titleScale(sc)
 	draw.Draw(dst, r, &image.Uniform{color.RGBA{0xE8, 0xE8, 0xE8, 0xff}}, image.Point{}, draw.Src)
 	draw.Draw(dst, image.Rect(r.Min.X, r.Min.Y, r.Max.X, r.Min.Y+ss), &image.Uniform{color.RGBA{0xF3, 0xF1, 0xF3, 0xff}}, image.Point{}, draw.Src)
 	dots := []struct {
@@ -654,10 +659,12 @@ func drawWindowTitleBar(dst *image.RGBA, r image.Rectangle, title string, ss int
 		{color.RGBA{0x00, 0xCA, 0x56, 0xff}, color.RGBA{0x14, 0xAE, 0x46, 0xff}},
 	}
 	// Centered in the bar, keeping the old sub-pixel eyeball below center.
+	// Discs grow on their own gentle curve (dotScale), positions stay put.
+	rad := int(6*dotScale(sc)*float64(ss) + 0.5)
 	cy := r.Min.Y + r.Dy()/2 + ss/2
 	for i, d := range dots {
 		cx := r.Min.X + 8*ss + 6*ss + i*(12*ss+4*ss)
-		fillCircleBorder(dst, cx, cy, 6*ss, d.fill, d.border)
+		fillCircleBorder(dst, cx, cy, rad, d.fill, d.border)
 	}
 	face := titleFacePx(14 * ts * float64(ss))
 	tw := font.MeasureString(face, title).Ceil()
@@ -666,15 +673,17 @@ func drawWindowTitleBar(dst *image.RGBA, r image.Rectangle, title string, ss int
 	d.DrawString(title)
 }
 
-func drawFloatingTitleBar(dst *image.RGBA, r image.Rectangle, title string, ss int, ts float64) {
+func drawFloatingTitleBar(dst *image.RGBA, r image.Rectangle, title string, ss int, sc float64) {
 	if ss <= 0 {
 		ss = 1
 	}
+	ts := titleScale(sc)
 	dots := []color.RGBA{
 		{0xFF, 0x5C, 0x5C, 0xff}, {0xFF, 0xBD, 0x4C, 0xff}, {0x00, 0xCA, 0x56, 0xff},
 	}
 	// CSS: 15px dots, buttons left 13px top 9px; centered like window dots.
-	rad := int(7.5*float64(ss) + 0.5)
+	// Discs grow on the gentle dotScale curve; positions stay put.
+	rad := int(7.5*dotScale(sc)*float64(ss) + 0.5)
 	cy := r.Min.Y + r.Dy()/2 - ss/2
 	for i, c := range dots {
 		cx := r.Min.X + int(20.5*float64(ss)+0.5) + i*(15*ss+4*ss)
@@ -687,10 +696,11 @@ func drawFloatingTitleBar(dst *image.RGBA, r image.Rectangle, title string, ss i
 	d.DrawString(title)
 }
 
-func drawSolidTitle(dst *image.RGBA, r image.Rectangle, title string, ss int, ts float64) {
+func drawSolidTitle(dst *image.RGBA, r image.Rectangle, title string, ss int, sc float64) {
 	if ss <= 0 {
 		ss = 1
 	}
+	ts := titleScale(sc)
 	face := titleFacePx(14 * ts * float64(ss))
 	tw := font.MeasureString(face, title).Ceil()
 	tx := r.Min.X + (r.Dx()-tw)/2

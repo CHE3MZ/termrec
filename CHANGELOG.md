@@ -7,7 +7,8 @@
 - Render: default fontSize raised from 12 to 20, letterSpacing from 0
   to -1 (clearer, slightly tighter type everywhere).
 - Render: two-curve chrome scaling (structure follows `fontSize`, titles
-  and bars damped, dots stay 12px like macOS); 12px output stays ref-exact.
+  and bars at two-thirds rate, dots on their own gentle curve); 12px output
+  stays ref-exact.
 - Tests: black-box fixture/render suite moved to `tests/`; unit tests stay
   next to the code they cover.
 - Fixtures: typed `hyperfine` benchmark demo (progress-bar frames, unicode

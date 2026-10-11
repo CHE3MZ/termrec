@@ -234,8 +234,8 @@ func TestFrameGeometryCSS(t *testing.T) {
 	}
 }
 
-// Scale factors: frameScale is exact at the 12px anchor; titleScale damps
-// titlebar content so it stays under the terminal type.
+// Scale factors: frameScale is exact at the 12px anchor; titleScale and
+// dotScale land titles and discs just under the terminal type at 20px.
 func TestFrameScaleFactors(t *testing.T) {
 	c12 := testConfig("null", nil)
 	c12.FontSize = 12
@@ -250,8 +250,14 @@ func TestFrameScaleFactors(t *testing.T) {
 	if got := titleScale(1); got != 1 {
 		t.Fatalf("titleScale(1) = %v want 1", got)
 	}
-	if got := titleScale(5.0 / 3); got < 1.19 || got > 1.21 {
-		t.Fatalf("titleScale(5/3) = %v want ~1.2", got)
+	if got := titleScale(5.0 / 3); got < 1.33 || got > 1.34 {
+		t.Fatalf("titleScale(5/3) = %v want ~1.333", got)
+	}
+	if got := dotScale(1); got != 1 {
+		t.Fatalf("dotScale(1) = %v want 1", got)
+	}
+	if got := dotScale(5.0 / 3); got < 1.16 || got > 1.17 {
+		t.Fatalf("dotScale(5/3) = %v want ~1.167", got)
 	}
 }
 
