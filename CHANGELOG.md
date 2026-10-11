@@ -1,11 +1,14 @@
 # Changelog
 
 ## Unreleased
+- Render: window traffic-light dots sit 3px below the CSS center (eyeballed).
 - Render: shadow glow shifted 2px down (drop-shadow look on any background).
 - Render: `-b/--background` flag to flatten onto an opaque page color.
 - Render: progress lines to stderr; unique default output `render<epoch>.gif`.
 - Fix: `repeat: -1` now plays once (was LoopCount 1 = twice).
 - Terminal: double-width CJK/emoji runes occupy two cells (xterm-like wrap).
+- Terminal: SGR blink (5/6, shown steady) and strikethrough (9/29, drawn).
+- Text: per-rune font fallback chain (family, Go Mono, Go Regular, basicfont).
 - Watermark kept (opt-in, off by default); skips and ignored style keys warn once to stderr.
 - Docs: README documents flags and known differences from terminalizer.
 

@@ -57,7 +57,10 @@ func drawTerminal(grid [][]Cell, cfg config.Config, colors map[string]color.RGBA
 	if px <= 0 {
 		px = 12
 	}
-	face := monoFaceFor(cfg.FontFamily, px)
+	// Per-rune fallback chain (primary, Go Mono, Go Regular, basicfont):
+	// Chromium falls back per glyph, so a single face leaves tofu for
+	// CJK/emoji/symbols it doesn't cover. Baseline stays the primary's.
+	faces := monoFacesFor(cfg.FontFamily, px)
 
 	for y, row := range grid {
 		for x, cell := range row {
@@ -85,7 +88,7 @@ func drawTerminal(grid [][]Cell, cfg config.Config, colors map[string]color.RGBA
 				d := &font.Drawer{
 					Dst:  img,
 					Src:  &image.Uniform{fg},
-					Face: face,
+					Face: faceForRune(faces, cell.Ch),
 					Dot:  fixed.P(x0, y0+ascent),
 				}
 				d.DrawString(string(cell.Ch))
@@ -104,6 +107,13 @@ func drawTerminal(grid [][]Cell, cfg config.Config, colors map[string]color.RGBA
 			} else if cell.Underline {
 				uy := y0 + ch - 3*ss
 				draw.Draw(img, image.Rect(x0, uy, x0+cw, uy+ss), &image.Uniform{fg}, image.Point{}, draw.Over)
+			}
+			if cell.Strikethrough {
+				sy := y0 + ch/2 - ss/2
+				if sy < y0 {
+					sy = y0
+				}
+				draw.Draw(img, image.Rect(x0, sy, x0+cw, sy+ss), &image.Uniform{fg}, image.Point{}, draw.Over)
 			}
 		}
 	}
@@ -244,7 +254,7 @@ func drawCursor(termImg *image.RGBA, grid [][]Cell, curX, curY int, cfg config.C
 			d := &font.Drawer{
 				Dst:  termImg,
 				Src:  &image.Uniform{glyphCol},
-				Face: monoFaceFor(cfg.FontFamily, px),
+				Face: faceForRune(monoFacesFor(cfg.FontFamily, px), underCh),
 				Dot:  fixed.P(r.Min.X, r.Min.Y+ascent),
 			}
 			d.DrawString(string(underCh))

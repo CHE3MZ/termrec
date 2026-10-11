@@ -1,6 +1,7 @@
 package render
 
 import (
+	"image"
 	"image/gif"
 	"os"
 	"testing"
@@ -77,6 +78,49 @@ func TestNewlineAndCursor(t *testing.T) {
 	term3.Feed("\x1b[2;3H*")
 	if term3.Grid[1][2].Ch != '*' {
 		t.Fatalf("cursor pos: %+v", term3.Grid[1][2])
+	}
+}
+
+func TestSGRBlinkStrike(t *testing.T) {
+	term := NewTerminal(8, 2)
+	term.Feed("\x1b[5mB\x1b[9mS")
+	if !term.Grid[0][0].Blink || term.Grid[0][0].Strikethrough {
+		t.Fatalf("blink only: %+v", term.Grid[0][0])
+	}
+	if !term.Grid[0][1].Blink || !term.Grid[0][1].Strikethrough {
+		t.Fatalf("blink+strike: %+v", term.Grid[0][1])
+	}
+	term.Feed("\x1b[25m\x1b[29mQ\x1b[0mR")
+	if term.Grid[0][2].Blink || term.Grid[0][2].Strikethrough {
+		t.Fatalf("25/29 must clear: %+v", term.Grid[0][2])
+	}
+	if term.Grid[0][3].Blink || term.Grid[0][3].Strikethrough {
+		t.Fatalf("reset must clear: %+v", term.Grid[0][3])
+	}
+}
+
+func countOpaque(img *image.RGBA) int {
+	n := 0
+	for i := 3; i < len(img.Pix); i += 4 {
+		if img.Pix[i] >= 128 {
+			n++
+		}
+	}
+	return n
+}
+
+func TestStrikethroughDraw(t *testing.T) {
+	title := "T"
+	plainCfg := testConfig("null", &title)
+	term := NewTerminal(8, 2)
+	term.Feed("X")
+	plain := DrawFrame(term.Snapshot(), term.CurX, term.CurY, false, plainCfg)
+	strikeCfg := testConfig("null", &title)
+	term2 := NewTerminal(8, 2)
+	term2.Feed("\x1b[9mX")
+	struck := DrawFrame(term2.Snapshot(), term2.CurX, term2.CurY, false, strikeCfg)
+	if n0, n1 := countOpaque(plain), countOpaque(struck); n1 <= n0 {
+		t.Fatalf("strike must add pixels: plain=%d struck=%d", n0, n1)
 	}
 }
 

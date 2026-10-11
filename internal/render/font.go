@@ -13,6 +13,7 @@ import (
 	"golang.org/x/image/font/gofont/gomono"
 	"golang.org/x/image/font/gofont/goregular"
 	"golang.org/x/image/font/opentype"
+	"golang.org/x/image/math/fixed"
 )
 
 var (
@@ -80,6 +81,84 @@ func monoFaceFor(family string, px float64) font.Face {
 		return face
 	}
 	return basicfont.Face7x13
+}
+
+// embeddedFace builds a cached face from bundled TTF data at px size,
+// falling back to basicfont if parsing fails.
+func embeddedFace(name string, data []byte, px float64) font.Face {
+	if px <= 0 {
+		px = 12
+	}
+	key := name + "-" + itoa(int(px*10))
+	fontCacheMu.Lock()
+	if f, ok := faceCache[key]; ok {
+		fontCacheMu.Unlock()
+		return f
+	}
+	fontCacheMu.Unlock()
+	if ft, err := loadFont(name, data); err == nil {
+		if face, err := opentype.NewFace(ft, &opentype.FaceOptions{
+			Size:    px,
+			DPI:     72,
+			Hinting: font.HintingNone,
+		}); err == nil {
+			fontCacheMu.Lock()
+			faceCache[key] = face
+			fontCacheMu.Unlock()
+			return face
+		}
+	}
+	return basicfont.Face7x13
+}
+
+// monoFacesFor returns the per-rune fallback chain for terminal cells: the
+// resolved family face first, then embedded Go Mono, embedded Go Regular,
+// then basicfont. A single face rarely covers every rune a recording holds
+// (CJK/emoji/symbols), and Chromium falls back per glyph — this chain is
+// our version of that. Faces are cached; duplicates collapsed.
+func monoFacesFor(family string, px float64) []font.Face {
+	chain := []font.Face{
+		monoFaceFor(family, px),
+		embeddedFace("gomono", gomono.TTF, px),
+		embeddedFace("goregular", goregular.TTF, px),
+		basicfont.Face7x13,
+	}
+	out := chain[:0]
+	seen := map[font.Face]bool{}
+	for _, f := range chain {
+		if f == nil || seen[f] {
+			continue
+		}
+		seen[f] = true
+		out = append(out, f)
+	}
+	if len(out) == 0 {
+		return []font.Face{basicfont.Face7x13}
+	}
+	return out
+}
+
+// faceForRune picks the first face in chain reporting a glyph for r via
+// GlyphAdvance; the last face always wins, so an uncovered rune degrades to
+// the last-resort box instead of vanishing. A face that cannot report
+// coverage is trusted as-is. All faces share the primary's baseline at the
+// draw site, so mixed-coverage lines stay aligned.
+func faceForRune(chain []font.Face, r rune) font.Face {
+	if len(chain) == 0 {
+		return basicfont.Face7x13
+	}
+	for _, f := range chain[:len(chain)-1] {
+		g, ok := f.(interface {
+			GlyphAdvance(rune) (fixed.Int26_6, bool)
+		})
+		if !ok {
+			return f
+		}
+		if _, has := g.GlyphAdvance(r); has {
+			return f
+		}
+	}
+	return chain[len(chain)-1]
 }
 
 // normalizeFamily canonicalizes a CSS font list for cache keys.

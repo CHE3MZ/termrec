@@ -25,11 +25,15 @@ type Cell struct {
 	Dim       bool
 	Inverse   bool
 	Underline bool
+	// Blink renders as steady text: a GIF still captures one instant, so
+	// the visible ("on") phase is what a screenshot would show.
+	Blink         bool
+	Strikethrough bool
 }
 
 // Terminal is an ANSI/SGR emulator covering what xterm 3.x emits for
 // terminalizer recordings: printable text (incl. double-width CJK/emoji),
-// \n \r \b \t, SGR (incl. 256/truecolor),
+// \n \r \b \t, SGR (incl. 256/truecolor, blink shown steady, strikethrough),
 // cursor moves, erase, scroll regions (treated as full), alt-screen (treated as clear),
 // cursor save/restore + visibility.
 type Terminal struct {
@@ -44,6 +48,8 @@ type Terminal struct {
 	CurDim         bool
 	CurInverse     bool
 	CurUnderline   bool
+	CurBlink       bool
+	CurStrike      bool
 	CursorVisible  bool
 	savedX, savedY int
 	savedFG        string
@@ -128,6 +134,7 @@ func (t *Terminal) put(ch rune) {
 		Ch: ch, FG: t.CurFG, BG: t.CurBG,
 		FGCustom: t.CurFGCustom, BGCustom: t.CurBGCustom,
 		Bold: t.CurBold, Dim: t.CurDim, Inverse: t.CurInverse, Underline: t.CurUnderline,
+		Blink: t.CurBlink, Strikethrough: t.CurStrike,
 	}
 	t.CurX++
 }
@@ -149,6 +156,7 @@ func (t *Terminal) putWide(ch rune) {
 		Ch: ch, FG: t.CurFG, BG: t.CurBG,
 		FGCustom: t.CurFGCustom, BGCustom: t.CurBGCustom,
 		Bold: t.CurBold, Dim: t.CurDim, Inverse: t.CurInverse, Underline: t.CurUnderline,
+		Blink: t.CurBlink, Strikethrough: t.CurStrike,
 	}
 	t.Grid[t.CurY][t.CurX] = cell
 	cont := cell
@@ -169,12 +177,12 @@ func runeWidth(r rune) int {
 	case r < 0x0300:
 		return 1
 	case r <= 0x036F, // combining diacriticals
-		r >= 0x1AB0 && r <= 0x1AFF, // combining diacriticals extended
-		r >= 0x1DC0 && r <= 0x1DFF, // combining diacriticals supplement
-		r >= 0x20D0 && r <= 0x20FF, // combining enclosing marks
-		r >= 0xFE20 && r <= 0xFE2F, // combining half marks
+		r >= 0x1AB0 && r <= 0x1AFF,                // combining diacriticals extended
+		r >= 0x1DC0 && r <= 0x1DFF,                // combining diacriticals supplement
+		r >= 0x20D0 && r <= 0x20FF,                // combining enclosing marks
+		r >= 0xFE20 && r <= 0xFE2F,                // combining half marks
 		r == 0x200B || r == 0x200C || r == 0x200D, // ZWSP/ZWNJ/ZWJ
-		r == 0x2060 || r == 0xFEFF: // word joiner / ZWNBSP
+		r == 0x2060 || r == 0xFEFF:                // word joiner / ZWNBSP
 		return 0
 	}
 	switch {
@@ -261,6 +269,8 @@ func (t *Terminal) sgrReset() {
 	t.CurDim = false
 	t.CurInverse = false
 	t.CurUnderline = false
+	t.CurBlink = false
+	t.CurStrike = false
 }
 
 func (t *Terminal) handleSGR(params []int) {
@@ -281,16 +291,25 @@ func (t *Terminal) handleSGR(params []int) {
 			if p == 4 {
 				t.CurUnderline = true
 			}
+		case 5, 6:
+			// slow/rapid blink: drawn steady (GIF shows the on-phase)
+			t.CurBlink = true
 		case 7:
 			t.CurInverse = true
+		case 9:
+			t.CurStrike = true
 		case 22:
 			t.CurBold = false
 			t.CurDim = false
 		case 23:
 		case 24:
 			t.CurUnderline = false
+		case 25:
+			t.CurBlink = false
 		case 27:
 			t.CurInverse = false
+		case 29:
+			t.CurStrike = false
 		case 39:
 			t.CurFG = "foreground"
 			t.CurFGCustom = nil

@@ -49,10 +49,14 @@ Deliberate (privacy / headless design):
 Approximations (custom engine, no browser):
 
 - Fonts: embedded Go Mono / Go Regular with system-font lookup by filename,
-  vs Chromium's full font stack. Layout parity, not pixel parity.
-- Terminal emulation covers SGR (incl. 256-color/truecolor), cursor moves,
+  vs Chromium's full font stack. Layout parity, not pixel parity. Glyphs are
+  resolved per rune across a fallback chain (family face, Go Mono, Go Regular,
+  basicfont), so mixed-coverage text degrades gracefully instead of tofu —
+  but color emoji still has no monochrome source and may box.
+- Terminal emulation covers SGR (incl. 256-color/truecolor, blink shown
+  steady, strikethrough), cursor moves,
   erase, scroll, alt-screen-as-clear, scroll-regions-as-full, and double-width
-  CJK/emoji. No combining-mark rendering, no italic/strikethrough, no mouse /
+  CJK/emoji. No combining-mark rendering, no italic, no mouse /
   bracketed-paste / focus-event sequences.
 - `frameBox.style` honors `background/backgroundColor, padding, margin,
   border, boxShadow: none, borderRadius`; other arbitrary CSS keys are ignored.

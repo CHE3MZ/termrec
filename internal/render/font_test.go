@@ -74,3 +74,19 @@ func TestUnknownFamilyFallsBackToGoMono(t *testing.T) {
 		t.Fatalf("unknown family should not resolve")
 	}
 }
+
+// Per-rune fallback: latin stays on the primary face, CJK (absent from Go
+// Mono) falls through to a later chain face instead of drawing tofu.
+func TestFaceForRuneFallback(t *testing.T) {
+	chain := monoFacesFor("", 24)
+	primary := monoFaceFor("", 24)
+	if got := faceForRune(chain, 'A'); got != primary {
+		t.Fatalf("latin must resolve to primary face")
+	}
+	if got := faceForRune(chain, '中'); got == primary {
+		t.Fatalf("CJK must fall past Go Mono (no CJK coverage)")
+	}
+	if faceForRune(nil, 'A') == nil {
+		t.Fatalf("empty chain must yield last-resort face, not nil")
+	}
+}

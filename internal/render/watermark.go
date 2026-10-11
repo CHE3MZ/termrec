@@ -17,8 +17,8 @@ import (
 // applyWatermark runs once per frame, so without this every notice would
 // repeat for every frame of the GIF.
 var (
-	warnMu  sync.Mutex
-	warned  = map[string]bool{}
+	warnMu sync.Mutex
+	warned = map[string]bool{}
 )
 
 func warnOnce(format string, args ...any) {
