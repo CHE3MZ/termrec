@@ -609,7 +609,9 @@ func drawWindowTitleBar(dst *image.RGBA, r image.Rectangle, title string, ss int
 		{color.RGBA{0xFF, 0xBD, 0x4C, 0xff}, color.RGBA{0xE0, 0x9E, 0x3E, 0xff}},
 		{color.RGBA{0x00, 0xCA, 0x56, 0xff}, color.RGBA{0x14, 0xAE, 0x46, 0xff}},
 	}
-	cy := r.Min.Y + int(9.5*float64(ss)+0.5)
+	// Dots sit 4px below the CSS top:3.5px center (9.5): eyeballed lower
+	// against real renders, the strict CSS value reads too high.
+	cy := r.Min.Y + int((9.5+4)*float64(ss)+0.5)
 	for i, d := range dots {
 		cx := r.Min.X + 8*ss + 6*ss + i*(12*ss+4*ss)
 		fillCircleBorder(dst, cx, cy, 6*ss, d.fill, d.border)
