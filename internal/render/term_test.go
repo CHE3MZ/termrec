@@ -122,9 +122,9 @@ func TestFrameGeometryCSS(t *testing.T) {
 
 	wcfg := testConfig("window", &title)
 	wimg := DrawFrame(snap, term.CurX, term.CurY, true, wcfg)
-	// card = term + 2*10 pad, +24 title; outer = card + 2*18 margin + 2*21 glow
+	// card = term + 2*10 pad, +24 title; outer = card + 2*18 margin + 2*21 glow + 2 shadow drop
 	wantW := termW + 20 + 36 + 42
-	wantH := termH + 20 + 24 + 36 + 42
+	wantH := termH + 20 + 24 + 36 + 42 + 2
 	if wimg.Bounds().Dx() != wantW || wimg.Bounds().Dy() != wantH {
 		t.Fatalf("window geometry: got %dx%d want %dx%d", wimg.Bounds().Dx(), wimg.Bounds().Dy(), wantW, wantH)
 	}
@@ -132,7 +132,7 @@ func TestFrameGeometryCSS(t *testing.T) {
 	fcfg := testConfig("floating", &title)
 	fimg := DrawFrame(snap, term.CurX, term.CurY, true, fcfg)
 	wantW = termW + 40 + 36 + 42
-	wantH = termH + 40 + 34 + 36 + 42
+	wantH = termH + 40 + 34 + 36 + 42 + 2
 	if fimg.Bounds().Dx() != wantW || fimg.Bounds().Dy() != wantH {
 		t.Fatalf("floating geometry: got %dx%d want %dx%d", fimg.Bounds().Dx(), fimg.Bounds().Dy(), wantW, wantH)
 	}
@@ -162,7 +162,7 @@ func TestTransparentDefault(t *testing.T) {
 		{Delay: 200, Content: "yo\r\n"},
 	}}
 	path := t.TempDir() + "/out.gif"
-	out, err := Render(rec, path, 0, 1)
+	out, err := Render(rec, path, 0, 1, "")
 	if err != nil {
 		t.Fatal(err)
 	}

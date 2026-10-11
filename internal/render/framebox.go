@@ -31,6 +31,9 @@ const (
 	frameRadius   = 6
 	frameMargin   = 18
 	shadowSigma1x = 7
+	// Vertical drop-shadow offset (1x px, downward only): the glow is drawn
+	// shadowOffsetY below center, like CSS `box-shadow: 0 2px 18px ...`.
+	shadowOffsetY = 2
 	// Peak glow opacity (0-255). Blurred edge coverage halves it, so the
 	// pixels hugging the card sit near ~0.12 alpha: a faint, fine stipple
 	// instead of a coarse dotted band. Higher values look chunkier in GIF's
@@ -178,7 +181,7 @@ func frameOuterSize(cfg config.Config, innerW, innerH int) image.Rectangle {
 	H := cardH + margin*2
 	if shadowEnabled(cfg) {
 		W += shadowGlow() * 2
-		H += shadowGlow() * 2
+		H += shadowGlow()*2 + shadowOffsetY
 	}
 	return image.Rect(0, 0, W, H)
 }
@@ -298,13 +301,15 @@ func applyFrameBox(termImg *image.RGBA, cfg config.Config, colors map[string]col
 	card = applyWatermark(card, cfg, ss)
 
 	// 2. Composite onto transparent canvas with margin + soft gaussian glow.
-	// Glow spread covers 3 sigma so the falloff is never clipped.
+	// Glow spread covers 3 sigma so the falloff is never clipped; the glow
+	// is dropped shadowOffsetY below center (y = y + offset).
 	glow := 3 * shadowSigma1x * ss
+	dy := shadowOffsetY * ss
 	W := cardW + margin*2
 	H := cardH + margin*2
 	if shadowEnabled(cfg) {
 		W += glow * 2
-		H += glow * 2
+		H += glow*2 + dy
 	}
 	out := image.NewRGBA(image.Rect(0, 0, W, H))
 	ox := margin
@@ -312,7 +317,7 @@ func applyFrameBox(termImg *image.RGBA, cfg config.Config, colors map[string]col
 	if shadowEnabled(cfg) {
 		ox += glow
 		oy2 += glow
-		draw.Draw(out, image.Rect(ox-glow, oy2-glow, ox+cardW+glow, oy2+cardH+glow),
+		draw.Draw(out, image.Rect(ox-glow, oy2-glow+dy, ox+cardW+glow, oy2+cardH+glow+dy),
 			shadowLayer(cardW, cardH, radius, shadowSigma1x*ss), image.Point{}, draw.Over)
 	}
 	draw.Draw(out, image.Rect(ox, oy2, ox+cardW, oy2+cardH), card, image.Point{}, draw.Over)

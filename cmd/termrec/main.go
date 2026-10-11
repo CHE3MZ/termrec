@@ -230,13 +230,15 @@ func cmdPlay(args []string) {
 
 func cmdRender(args []string) {
 	if hasHelp(args) {
-		fmt.Fprintln(os.Stderr, "Usage: termrec render <recordingFile> [-o out.gif] [-q quality] [-s step]")
+		fmt.Fprintln(os.Stderr, "Usage: termrec render <recordingFile> [-o out.gif] [-q quality] [-s step] [-b background]")
 		fmt.Fprintln(os.Stderr, "  -o, --output   Output file")
 		fmt.Fprintln(os.Stderr, "  -q, --quality  Quality 1-100")
 		fmt.Fprintln(os.Stderr, "  -s, --step     Step to reduce frames (default 1)")
+		fmt.Fprintln(os.Stderr, "  -b, --background  Page background color (CSS color, default transparent)")
 		return
 	}
 	var out string
+	var pageBG string
 	quality := 0
 	step := 1
 	var positional []string
@@ -279,6 +281,15 @@ func cmdRender(args []string) {
 				hintAndExit(fmt.Errorf("bad step %q", val))
 			}
 			step = n
+		case "-b", "--background":
+			if !hasVal {
+				i++
+				if i >= len(args) {
+					hintAndExit(fmt.Errorf("flag %s needs a value", name))
+				}
+				val = args[i]
+			}
+			pageBG = val
 		default:
 			if len(a) > 0 && a[0] == '-' {
 				hintAndExit(fmt.Errorf("unknown flag %q for render", a))
@@ -299,7 +310,7 @@ func cmdRender(args []string) {
 	} else {
 		outPath = config.ResolveFilePath("render", "gif")
 	}
-	final, err := render.Render(rec, outPath, quality, step)
+	final, err := render.Render(rec, outPath, quality, step, pageBG)
 	if err != nil {
 		hintAndExit(err)
 	}

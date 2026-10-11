@@ -40,7 +40,7 @@ func TestRenderAllFixtures(t *testing.T) {
 			rec := loadFixture(t, name)
 			wantFrames := len(rec.Records)
 			path := filepath.Join(t.TempDir(), name+".gif")
-			out, err := Render(rec, path, 0, 1)
+			out, err := Render(rec, path, 0, 1, "")
 			if err != nil {
 				t.Fatalf("render: %v", err)
 			}
@@ -76,7 +76,7 @@ func TestRenderStep(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "s.gif")
 		// reload: Render mutates delays via Adjust
 		rec2 := loadFixture(t, "demo")
-		if _, err := Render(rec2, path, 0, step); err != nil {
+		if _, err := Render(rec2, path, 0, step, ""); err != nil {
 			t.Fatalf("step %d: %v", step, err)
 		}
 		g := decodeGIF(t, path)
@@ -92,7 +92,7 @@ func TestRenderQualityVariants(t *testing.T) {
 	for _, q := range []int{1, 30, 60, 80, 100} {
 		rec := loadFixture(t, "demo")
 		path := filepath.Join(t.TempDir(), "q.gif")
-		if _, err := Render(rec, path, q, 1); err != nil {
+		if _, err := Render(rec, path, q, 1, ""); err != nil {
 			t.Fatalf("quality %d: %v", q, err)
 		}
 		g := decodeGIF(t, path)
@@ -148,7 +148,7 @@ func TestGIFColorConsistency(t *testing.T) {
 		{Delay: 200, Content: "cd\r\n"},
 	}}
 	path := filepath.Join(t.TempDir(), "cc.gif")
-	out, err := Render(rec, path, 100, 1)
+	out, err := Render(rec, path, 100, 1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,4 +177,58 @@ func diff(a, b uint8) int {
 		return -d
 	}
 	return d
+}
+
+// --background flattens frames onto an opaque page (white corners, no
+// transparent palette entry); bad colors error; empty/transparent keeps
+// the transparent default.
+func TestRenderBackground(t *testing.T) {
+	mkrec := func() recording.File {
+		title := "T"
+		cfg := testConfig("floating", &title)
+		return recording.File{Config: cfg, Records: []recording.Record{
+			{Delay: 200, Content: "hi\r\n"},
+			{Delay: 200, Content: "yo\r\n"},
+		}}
+	}
+	path := filepath.Join(t.TempDir(), "bg.gif")
+	out, err := Render(mkrec(), path, 100, 1, "white")
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := decodeGIF(t, out)
+	W, H := g.Config.Width, g.Config.Height
+	for _, p := range [][2]int{{0, 0}, {W - 1, 0}, {0, H - 1}, {W - 1, H - 1}} {
+		r, gg, b, a := g.Image[0].At(p[0], p[1]).RGBA()
+		if a>>8 != 0xff || uint8(r>>8) != 0xff || uint8(gg>>8) != 0xff || uint8(b>>8) != 0xff {
+			t.Fatalf("corner %v not opaque white", p)
+		}
+	}
+	for _, pm := range g.Image {
+		for _, c := range pm.Palette {
+			if _, _, _, a := c.RGBA(); a == 0 {
+				t.Fatalf("backgrounded GIF must have no transparent palette entry")
+			}
+		}
+	}
+	if _, err := Render(mkrec(), filepath.Join(t.TempDir(), "bad.gif"), 0, 1, "notacolor"); err == nil {
+		t.Fatalf("bad background color must error")
+	}
+	// explicit transparent == default transparent
+	out2, err := Render(mkrec(), filepath.Join(t.TempDir(), "t.gif"), 0, 1, "transparent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	g2 := decodeGIF(t, out2)
+	foundTrans := false
+	for _, pm := range g2.Image {
+		for _, c := range pm.Palette {
+			if _, _, _, a := c.RGBA(); a == 0 {
+				foundTrans = true
+			}
+		}
+	}
+	if !foundTrans {
+		t.Fatalf("transparent background must preserve transparency")
+	}
 }

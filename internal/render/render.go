@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
 	"image/gif"
 	"os"
 
@@ -69,6 +70,22 @@ func anchorColors(cfg config.Config) []color.RGBA {
 	return out
 }
 
+// flattenOnto composites a transparent frame over the pageBG color.
+// Empty/"transparent" returns img untouched; unparseable colors error.
+func flattenOnto(img *image.RGBA, pageBG string) (*image.RGBA, error) {
+	c, isTrans, err := theme.Parse(pageBG)
+	if err != nil {
+		return nil, fmt.Errorf("bad background %q: %v", pageBG, err)
+	}
+	if isTrans {
+		return img, nil
+	}
+	out := image.NewRGBA(img.Bounds())
+	draw.Draw(out, out.Bounds(), &image.Uniform{c}, image.Point{}, draw.Src)
+	draw.Draw(out, out.Bounds(), img, image.Point{}, draw.Over)
+	return out, nil
+}
+
 func repeatToLoopCount(r int) int {
 	if r == -1 {
 		return 1 // play once (no infinite loop); 0 == infinite in GIF
@@ -80,10 +97,12 @@ func repeatToLoopCount(r int) int {
 }
 
 // Render converts a recording to an animated GIF.
-// Transparency is preserved: theme background "transparent" (the default)
-// yields transparent GIF pixels; no white flattening is applied. The frame
-// shadow is a dark alpha glow so it reads as a shadow on any background.
-func Render(rec recording.File, outPath string, qualityOverride int, step int) (string, error) {
+// Transparency is preserved by default: theme background "transparent"
+// (the default) yields transparent GIF pixels. Pass pageBG (any CSS color:
+// name, #hex, rgb(), hsl()) to flatten frames onto an opaque page instead,
+// e.g. "white" for the classic backgrounded look with a smooth shadow.
+// Empty or "transparent" keeps transparency; anything unparseable errors.
+func Render(rec recording.File, outPath string, qualityOverride int, step int, pageBG string) (string, error) {
 	if step <= 0 {
 		step = 1
 	}
@@ -133,7 +152,12 @@ func Render(rec recording.File, outPath string, qualityOverride int, step int) (
 		// DrawFrame composes at 2x + downscales (smooth) and applies the
 		// watermark frame-relative (CSS: prepended to .terminalizer-frame).
 		img := DrawFrame(snap, term.CurX, term.CurY, term.CursorVisible, cfg)
-		// NOTE: no flatten() — transparency is the default (see gifutil.go).
+		if pageBG != "" {
+			var err error
+			if img, err = flattenOnto(img, pageBG); err != nil {
+				return "", err
+			}
+		}
 		// delay = next frame's delay (ref/render.js:237), % len for last frame
 		nextDelay := rec.Records[(i+1)%len(rec.Records)].Delay
 		frames = append(frames, frame{img: img, delay: int(nextDelay)})

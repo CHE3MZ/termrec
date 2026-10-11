@@ -35,5 +35,22 @@ else
   echo "    variants(step2,q30): FAILED" | tee -a "$log"
   failed=1
 fi
+# white-background variants of every fixture (-b white)
+for f in testdata/*.yml; do
+  base=$(basename "$f" .yml)
+  out="dist/whitebg-${base}.gif"
+  if go run ./cmd/termrec render "$f" -o "$out" -s 1 -b white >>"$log" 2>&1; then
+    if [ -s "$out" ]; then
+      size=$(wc -c <"$out" | tr -d ' ')
+      echo "    whitebg-$base: OK ($size bytes)" | tee -a "$log"
+    else
+      echo "    whitebg-$base: FAILED (empty output)" | tee -a "$log"
+      failed=1
+    fi
+  else
+    echo "    whitebg-$base: FAILED (render error)" | tee -a "$log"
+    failed=1
+  fi
+done
 echo "checked $count fixtures" | tee -a "$log"
 exit "$failed"
