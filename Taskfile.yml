@@ -37,6 +37,11 @@ tasks:
     cmds:
       - sh scripts/render-sample.sh
 
+  render-micro:
+    desc: Complex editor demo testdata/micro.yml -> dist/micro.gif
+    cmds:
+      - sh scripts/render-micro.sh
+
   render-check:
     desc: Render all fixtures + variants with verification
     cmds:

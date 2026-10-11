@@ -75,5 +75,6 @@ task build          # build dist/termrec
 task lint           # bugcheck + seccheck (same scripts CI runs)
 task test           # go test ./...
 task render-sample  # smoke render testdata/demo.yml
+task render-micro   # complex editor demo testdata/micro.yml
 task render-check   # all fixtures + step/quality variants + whitebg variants
 ```
