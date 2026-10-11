@@ -27,7 +27,7 @@ config:
   cursorStyle: block
   fontFamily: Monaco, Monospace
   fontFile: null
-  fontSize: 12
+  fontSize: 16
   lineHeight: 1
   letterSpacing: 0
   theme:

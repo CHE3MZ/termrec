@@ -205,8 +205,8 @@ fontFamily: "Monaco, Lucida Console, Ubuntu Mono, Monospace"
 # Use this for files that aren't installed system-wide.
 fontFile: null
 
-# The size of the font
-fontSize: 12
+# The size of the font in px (bigger = larger, clearer GIFs)
+fontSize: 16
 
 # The height of lines
 lineHeight: 1
