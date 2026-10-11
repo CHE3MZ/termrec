@@ -50,7 +50,7 @@ config:
     brightWhite: "#e5e5e5"
 records:
   - delay: 500
-    content: "\x1b[35m$\x1b[0m "
+    content: "\x1b[37m$\x1b[0m "
   - delay: 500
     content: "hello termrec\r\n"
   - delay: 600
@@ -58,4 +58,4 @@ records:
   - delay: 800
     content: "done\r\n"
   - delay: 800
-    content: "\x1b[35m$\x1b[0m "
+    content: "\x1b[37m$\x1b[0m "

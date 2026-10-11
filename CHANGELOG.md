@@ -12,6 +12,7 @@
 - Terminal: SGR blink (5/6, shown steady) and strikethrough (9/29, drawn).
 - Text: per-rune font fallback chain (family, Go Mono, Go Regular, basicfont).
 - Fixtures: shell-prompt records (`$ ` open/close, cursor starts line 1) and calmer delays.
+- Fixtures: prompt `$` in white, not magenta.
 - Watermark kept (opt-in, off by default); skips and ignored style keys warn once to stderr.
 - Docs: README documents flags and known differences from terminalizer.
 

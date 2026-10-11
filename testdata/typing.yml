@@ -51,7 +51,7 @@ config:
     brightWhite: "#e5e5e5"
 records:
   - delay: 500
-    content: "\x1b[35m$\x1b[0m "
+    content: "\x1b[37m$\x1b[0m "
   - delay: 110
     content: "e"
   - delay: 90
@@ -89,4 +89,4 @@ records:
   - delay: 250
     content: "\x1b[32mhello world\x1b[0m\r\n"
   - delay: 700
-    content: "\x1b[35m$\x1b[0m "
+    content: "\x1b[37m$\x1b[0m "
