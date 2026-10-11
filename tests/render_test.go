@@ -276,6 +276,7 @@ func TestTransparentNoGhosts(t *testing.T) {
 	title := "T"
 	cfg := fixtureConfig("null", &title) // default theme bg transparent
 	cfg.FrameBox.Style = map[string]string{"margin": "0px"}
+	cfg.FontFamily = "" // embedded face: identical rasterization on every OS
 	rec := recording.File{Config: cfg, Records: []recording.Record{
 		{Delay: 200, Content: "ab\r\n"},
 		{Delay: 200, Content: "cd\r\n"},
